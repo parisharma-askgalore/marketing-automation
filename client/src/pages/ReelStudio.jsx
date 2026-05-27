@@ -337,7 +337,7 @@ function CurrentProject() {
       setLoadingHooks(true);
 
       const response = await fetch(
-        `${import.meta.env.VITE_N8N_URL}/webhook/generate-hooks`,
+        "/api/generate-hooks",
         {
           method: "POST",
           headers: {
@@ -386,7 +386,7 @@ function CurrentProject() {
     setLoadingScript(true);
 
       const response = await fetch(
-        `${import.meta.env.VITE_N8N_URL}/webhook/generate-script`,
+        "/api/generate-script",
         {
           method: "POST",
           headers: {
@@ -440,7 +440,7 @@ function CurrentProject() {
       if (from === "script") {
 
         const response = await fetch(
-          `${import.meta.env.VITE_N8N_URL}/webhook/generate-keyframe-prompts`,
+          "/api/generate-keyframe-prompts",
           {
             method: "POST",
             headers: {
@@ -486,7 +486,7 @@ function CurrentProject() {
       else if (from === "keyframes") {
 
         const response = await fetch(
-          `${import.meta.env.VITE_N8N_URL}/webhook/generate-storyboard-prompt`,
+          "/api/generate-storyboard-prompt",
           {
             method: "POST",
             headers: {
@@ -524,7 +524,7 @@ function CurrentProject() {
       else if (from === "storyboard") {
 
         const response = await fetch(
-          `${import.meta.env.VITE_N8N_URL}/webhook/generate-video-generation-hook-prompt`,
+          "/api/generate-video-generation-hook-prompt",
           {
             method: "POST",
             headers: {
@@ -563,7 +563,7 @@ function CurrentProject() {
       else if (from === "videoHook") {
 
         const response = await fetch(
-          `${import.meta.env.VITE_N8N_URL}/webhook/generate-video-speaking-part`,
+          "/api/generate-video-speaking-part",
           {
             method: "POST",
             headers: {
@@ -628,7 +628,7 @@ function CurrentProject() {
       };
 
       const response = await fetch(
-        `${import.meta.env.VITE_N8N_URL}/webhook/edit-section`,
+        "/api/edit-section",
         {
           method: "POST",
           headers: {
@@ -1071,7 +1071,7 @@ function PastProjects() {
       try {
 
         const response = await fetch(
-          `${import.meta.env.VITE_N8N_URL}/webhook/get-projects`
+          "/api/get-projects"
         );
 
         const data = await response.json();
