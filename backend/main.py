@@ -118,6 +118,10 @@ class OptimizePromptRequest(BaseModel):
     globalPrompt: str
     referencesCount: int
 
+class SearchImagesRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 5
+
 
 # Helper: Notion property builders
 def to_rich_text_property(text: str) -> dict:
@@ -862,7 +866,37 @@ Return output matching this JSON schema exactly:
         "optimizedPrompt": optimized_prompt
     }
 
+from duckduckgo_search import DDGS
 
+@app.post("/api/search-images")
+async def search_images(req: SearchImagesRequest):
+    try:
+        results = []
+        with DDGS() as ddgs:
+            # We fetch images from duckduckgo
+            ddgs_images = ddgs.images(
+                keywords=req.query,
+                region="wt-wt",
+                safesearch="moderate",
+                size=None,
+                color=None,
+                type_image=None,
+                layout=None,
+                license_image=None,
+                max_results=req.limit,
+            )
+            for r in ddgs_images:
+                results.append({
+                    "title": r.get("title"),
+                    "image": r.get("image"),
+                    "thumbnail": r.get("thumbnail"),
+                    "url": r.get("url"),
+                    "source": r.get("source")
+                })
+        return {"images": results}
+    except Exception as e:
+        logger.error(f"Image search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Image search failed: {str(e)}")
 
 @app.get("/api/get-projects")
 async def get_projects():

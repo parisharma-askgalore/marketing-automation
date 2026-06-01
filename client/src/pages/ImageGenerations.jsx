@@ -64,6 +64,11 @@ export default function ImageGenerations() {
   const [userDirection, setUserDirection] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
 
+  // Image Search State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+
 
   // Text Layer State
   const [line1, setLine1] = useState("Take");
@@ -139,6 +144,31 @@ export default function ImageGenerations() {
     } finally {
       setIsOptimizing(false);
     }
+  };
+
+  const handleSearchImages = async (e) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) return;
+    try {
+      setIsSearching(true);
+      const response = await fetch("/api/search-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery, limit: 10 })
+      });
+      if (!response.ok) throw new Error("Search failed");
+      const data = await response.json();
+      setSearchResults(data.images || []);
+    } catch (err) {
+      console.error("Image search error:", err);
+      alert("Error: " + err.message);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const addSearchedImageAsReference = (url, title) => {
+    setReferences(prev => [...prev, { name: title || "Searched Image", url }]);
   };
 
   // Generate Base Background + Character using Gemini
@@ -400,6 +430,43 @@ export default function ImageGenerations() {
                 </div>
               </div>
               <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={handleReferenceUpload} />
+              
+              {/* Image Search Box */}
+              <div style={{ marginTop: 16, background: "var(--bg-tertiary)", padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
+                <form onSubmit={handleSearchImages} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search images on web..."
+                    style={{ ...inputStyle, flex: 1, padding: "8px 12px", fontSize: "0.8rem" }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSearching || !searchQuery.trim()}
+                    style={{
+                      background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", 
+                      borderRadius: "var(--radius-md)", padding: "0 12px", fontSize: "0.8rem", fontWeight: 600, cursor: isSearching ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {isSearching ? "..." : "Search"}
+                  </button>
+                </form>
+                {searchResults.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
+                    {searchResults.map((res, i) => (
+                      <div 
+                        key={i} 
+                        onClick={() => addSearchedImageAsReference(res.image, res.title)}
+                        style={{ aspectRatio: "1/1", borderRadius: 4, overflow: "hidden", cursor: "pointer", border: "1px solid var(--border-color)" }}
+                        title="Click to add as reference"
+                      >
+                        <img src={res.thumbnail || res.image} alt={res.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               
               {references.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
