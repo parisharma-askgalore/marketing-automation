@@ -159,24 +159,61 @@ def get_title(properties: dict, name: str) -> str:
     return "".join([t.get("plain_text", "") for t in title_list])
 
 
-# Helper: Gemini JSON Generation
-def generate_json(prompt: str) -> dict:
+# Ordered fallback model list – most stable first
+FALLBACK_MODELS = [
+    os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash",
+]
+
+
+def _get_model_list() -> list:
+    """Deduplicated ordered list starting from the configured model."""
+    seen = set()
+    result = []
+    for m in FALLBACK_MODELS:
+        if m not in seen:
+            seen.add(m)
+            result.append(m)
+    return result
+
+
+def _call_gemini(prompt: str, as_json: bool = True):
+    """Try each model in fallback order; raise on all failing."""
     if not gemini_client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
-    
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    try:
-        response = gemini_client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        logger.error(f"Gemini generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+    last_err = None
+    for model_name in _get_model_list():
+        try:
+            logger.info(f"Trying Gemini model: {model_name}")
+            cfg = types.GenerateContentConfig(response_mime_type="application/json") if as_json else None
+            kwargs = dict(model=model_name, contents=prompt)
+            if cfg:
+                kwargs["config"] = cfg
+            response = gemini_client.models.generate_content(**kwargs)
+            if as_json:
+                return json.loads(response.text)
+            return response.text.strip()
+        except Exception as e:
+            err_str = str(e)
+            # 503 / resource exhausted – try next model
+            if "503" in err_str or "UNAVAILABLE" in err_str or "exhausted" in err_str.lower() or "high demand" in err_str.lower():
+                logger.warning(f"Model {model_name} unavailable, trying next fallback. Error: {err_str[:120]}")
+                last_err = e
+                continue
+            # Any other error – fail immediately
+            logger.error(f"Gemini generation error on {model_name}: {e}")
+            raise HTTPException(status_code=500, detail=f"AI generation failed: {err_str}")
+
+    raise HTTPException(status_code=503, detail=f"All Gemini models are currently overloaded. Please retry shortly. Last error: {str(last_err)[:200]}")
+
+
+# Helper: Gemini JSON Generation
+def generate_json(prompt: str) -> dict:
+    return _call_gemini(prompt, as_json=True)
 
 # Helper: Notion Page Creator
 async def create_notion_page(hook: str, tone: str, audience: str) -> str:
@@ -711,19 +748,7 @@ Modify ONLY according to the user request.
 """
     
     # Non-structured response from Gemini
-    if not gemini_client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
-        
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    try:
-        response = gemini_client.models.generate_content(
-            model=model_name,
-            contents=prompt
-        )
-        updated_content = response.text.strip()
-    except Exception as e:
-        logger.error(f"Gemini generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+    updated_content = _call_gemini(prompt, as_json=False)
         
     # Update in Notion based on the section index
     columns = {
