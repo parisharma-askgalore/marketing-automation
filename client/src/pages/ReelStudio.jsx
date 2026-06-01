@@ -284,7 +284,7 @@ function StepBar({ currentStep }) {
     }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 0,
-        height: 48, padding: "0 24px", maxWidth: 1400, margin: "0 auto",
+        height: 48, padding: "0 24px", maxWidth: "var(--max-width, 1400px)", margin: "0 auto",
       }}>
         {STEP_ORDER.map((key, i) => {
           const idx = STEP_ORDER.indexOf(key);
@@ -648,7 +648,7 @@ function CurrentProject() {
   return (
     <>
       <StepBar currentStep={step} />
-      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px" }}>
+      <main style={{ maxWidth: "var(--max-width, 1400px)", margin: "0 auto", padding: "32px 24px 80px" }}>
         <div style={{ display: "flex", gap: 32, alignItems: "start" }}>
 
           {/* Page anchor nav */}

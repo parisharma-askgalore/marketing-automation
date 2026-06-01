@@ -18,6 +18,7 @@
   --radius-lg:     12px;
   --shadow-sm:     0 1px 3px rgba(0,0,0,0.08);
   --shadow-md:     0 4px 12px rgba(0,0,0,0.08);
+  --max-width:     1400px;
 }
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
@@ -34,7 +35,21 @@ html {
 
 @media (min-width: 768px)  { html { font-size: 15px; } }
 @media (min-width: 1200px) { html { font-size: 16px; } }
-
+@media (min-width: 1600px) { 
+  :root { --max-width: 1536px; }
+  html { font-size: 17px; } 
+  body { zoom: 1.1; }
+}
+@media (min-width: 1920px) { 
+  :root { --max-width: 1800px; }
+  html { font-size: 18px; } 
+  body { zoom: 1.25; }
+}
+@media (min-width: 2560px) { 
+  :root { --max-width: 2400px; }
+  html { font-size: 20px; } 
+  body { zoom: 1.5; }
+}
 body {
   font-family: var(--font-sans);
   background: var(--bg-primary);

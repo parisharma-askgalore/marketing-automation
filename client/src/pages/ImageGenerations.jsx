@@ -71,19 +71,35 @@ export default function ImageGenerations() {
 
 
   // Text Layer State
-  const [line1, setLine1] = useState("Take");
-  const [line2, setLine2] = useState("the climb.");
-  const [line3, setLine3] = useState("Keep the");
-  const [line4, setLine4] = useState("sales moving.");
-  const [subText, setSubText] = useState("Zero Code 3D\nAI Sales Chatbot\nfor your business\nwebsite.");
-  const [selectedFont, setSelectedFont] = useState("Outfit");
-  const [textColor, setTextColor] = useState("#ffffff");
-  const [accentColor, setAccentColor] = useState("#2563eb"); // Blue accent like in the climb.
-  const [fontSize, setFontSize] = useState(38);
-  const [subFontSize, setSubFontSize] = useState(20);
+  const [textLayers, setTextLayers] = useState([
+    { id: 1, text: "Take", color: "#ffffff", font: "Outfit", size: 38 },
+    { id: 2, text: "the climb.", color: "#2563eb", font: "Outfit", size: 38 },
+    { id: 3, text: "Keep the", color: "#ffffff", font: "Outfit", size: 38 },
+    { id: 4, text: "sales moving.", color: "#2563eb", font: "Outfit", size: 38 }
+  ]);
+  const [subTextLayer, setSubTextLayer] = useState({
+    text: "Zero Code 3D\nAI Sales Chatbot\nfor your business\nwebsite.",
+    color: "#ffffff", font: "Outfit", size: 20
+  });
+  
+  const [selectedLayerId, setSelectedLayerId] = useState(null); // null = global, 1-4 = headline, 'sub' = subtext
+
   const [textX, setTextX] = useState(40);
   const [textY, setTextY] = useState(60);
   const [lineHeight, setLineHeight] = useState(1.25);
+
+  const selectedLayer = selectedLayerId === 'sub' ? subTextLayer : textLayers.find(l => l.id === selectedLayerId);
+  const updateSelectedLayer = (field, val) => {
+    if (selectedLayerId === 'sub') {
+      setSubTextLayer(prev => ({ ...prev, [field]: val }));
+    } else if (selectedLayerId) {
+      setTextLayers(prev => prev.map(l => l.id === selectedLayerId ? { ...l, [field]: val } : l));
+    }
+  };
+  const updateAllLayers = (field, val) => {
+    setTextLayers(prev => prev.map(l => ({ ...l, [field]: val })));
+    setSubTextLayer(prev => ({ ...prev, [field]: val }));
+  };
 
   // Merge & Canvas State
   const canvasRef = useRef(null);
@@ -264,20 +280,12 @@ export default function ImageGenerations() {
     ctx.textBaseline = "top";
     ctx.textAlign = "left";
 
-    // Draw Headline Text
     let currentY = textY;
-    const lines = [
-      { text: line1, isAccent: false },
-      { text: line2, isAccent: true },
-      { text: line3, isAccent: false },
-      { text: line4, isAccent: true }
-    ].filter(l => l.text.trim() !== "");
-
-    lines.forEach(line => {
-      ctx.font = `800 ${fontSize}px "${selectedFont}", sans-serif`;
-      ctx.fillStyle = line.isAccent ? accentColor : textColor;
+    
+    textLayers.filter(l => l.text.trim() !== "").forEach(line => {
+      ctx.font = `800 ${line.size}px "${line.font}", sans-serif`;
+      ctx.fillStyle = line.color;
       
-      // Shadow/Glow for crispness against varied backgrounds
       ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
       ctx.shadowBlur = 6;
       ctx.shadowOffsetX = 1;
@@ -285,49 +293,37 @@ export default function ImageGenerations() {
 
       ctx.fillText(line.text, textX, currentY);
       
-      // Reset shadows
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-      
-      currentY += fontSize * lineHeight;
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+      currentY += line.size * lineHeight;
     });
 
-    // Draw thin elegant line separator (similar to reference)
-    if (lines.length > 0 && subText.trim() !== "") {
+    if (textLayers.some(l => l.text.trim() !== "") && subTextLayer.text.trim() !== "") {
       currentY += 12;
-      ctx.fillStyle = accentColor;
+      ctx.fillStyle = textLayers[1]?.color || "#2563eb";
       ctx.fillRect(textX, currentY, 40, 3.5);
       currentY += 16;
     }
 
-    // Draw Sub-text Paragraph
-    if (subText.trim() !== "") {
-      ctx.font = `600 ${subFontSize}px "${selectedFont}", sans-serif`;
-      ctx.fillStyle = textColor;
-      
-      ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-      ctx.shadowBlur = 4;
-      ctx.shadowOffsetX = 1;
-      ctx.shadowOffsetY = 1;
+    if (subTextLayer.text.trim() !== "") {
+      ctx.font = `600 ${subTextLayer.size}px "${subTextLayer.font}", sans-serif`;
+      ctx.fillStyle = subTextLayer.color;
+      ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; 
+      ctx.shadowBlur = 4; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
 
-      const subLines = subText.split("\n");
+      const subLines = subTextLayer.text.split("\n");
       subLines.forEach(subLine => {
         ctx.fillText(subLine, textX, currentY);
-        currentY += subFontSize * 1.3;
+        currentY += subTextLayer.size * 1.3;
       });
       
-      // Reset shadows
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     }
   };
 
   // Re-render preview canvas whenever overlay parameters change
   useEffect(() => {
     drawCanvas();
-  }, [baseSceneImg, aspectRatio, line1, line2, line3, line4, subText, selectedFont, textColor, accentColor, fontSize, subFontSize, textX, textY, lineHeight]);
+  }, [baseSceneImg, aspectRatio, textLayers, subTextLayer, textX, textY, lineHeight]);
 
   // Final Merge Action
   const handleFinalMerge = async () => {
@@ -349,7 +345,7 @@ export default function ImageGenerations() {
   };
 
   return (
-    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px" }}>
+    <main style={{ maxWidth: "var(--max-width, 1400px)", margin: "0 auto", padding: "32px 24px 80px" }}>
       {/* Title Header */}
       <div style={{ marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
@@ -597,30 +593,25 @@ export default function ImageGenerations() {
               </span>
             </div>
             <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Text Inputs */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Headline Line 1</label>
-                  <input value={line1} onChange={(e) => setLine1(e.target.value)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Headline Line 2 (Accent Color)</label>
-                  <input value={line2} onChange={(e) => setLine2(e.target.value)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Headline Line 3</label>
-                  <input value={line3} onChange={(e) => setLine3(e.target.value)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Headline Line 4 (Accent Color)</label>
-                  <input value={line4} onChange={(e) => setLine4(e.target.value)} style={inputStyle} />
-                </div>
+                {textLayers.map((layer) => (
+                  <div key={layer.id}>
+                    <label style={labelStyle}>Headline Line {layer.id}</label>
+                    <input 
+                      value={layer.text} 
+                      onChange={(e) => setTextLayers(prev => prev.map(l => l.id === layer.id ? { ...l, text: e.target.value } : l))} 
+                      style={inputStyle} 
+                    />
+                  </div>
+                ))}
               </div>
 
               <div>
                 <label style={labelStyle}>Sub-headline Description Paragraph</label>
                 <textarea
-                  value={subText}
-                  onChange={(e) => setSubText(e.target.value)}
+                  value={subTextLayer.text}
+                  onChange={(e) => setSubTextLayer(prev => ({ ...prev, text: e.target.value }))}
                   style={{
                     width: "100%", height: 75, border: "1px solid var(--border-color)",
                     borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.875rem",
@@ -631,44 +622,82 @@ export default function ImageGenerations() {
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Selected Font</label>
-                  <select value={selectedFont} onChange={(e) => setSelectedFont(e.target.value)} style={selectStyle}>
-                    {FontsList.map(font => <option key={font} value={font}>{font}</option>)}
-                  </select>
+              <div style={{ borderTop: "1px solid var(--border-color)", margin: "16px 0", paddingTop: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                    {selectedLayerId === null ? "Global Styling (All Lines)" : 
+                     selectedLayerId === 'sub' ? "Styling Sub-headline" : 
+                     `Styling Headline Line ${selectedLayerId}`}
+                  </span>
+                  {selectedLayerId !== null && (
+                    <button onClick={() => setSelectedLayerId(null)} style={{ background: "transparent", border: "1px solid var(--border-color)", color: "var(--text-primary)", borderRadius: 4, padding: "4px 8px", fontSize: "0.75rem", cursor: "pointer" }}>
+                      Clear Selection
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <label style={labelStyle}>Font Color</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} style={{ width: 36, height: 36, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer", padding: 0 }} />
-                    <input value={textColor} onChange={(e) => setTextColor(e.target.value)} style={{ ...inputStyle, flex: 1, padding: "8px" }} />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Font</label>
+                    <select 
+                      value={selectedLayerId === null ? textLayers[0].font : selectedLayer.font} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (selectedLayerId === null) updateAllLayers("font", val);
+                        else updateSelectedLayer("font", val);
+                      }} 
+                      style={selectStyle}
+                    >
+                      {FontsList.map(font => <option key={font} value={font}>{font}</option>)}
+                    </select>
                   </div>
-                </div>
-                <div>
-                  <label style={labelStyle}>Accent Color</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} style={{ width: 36, height: 36, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer", padding: 0 }} />
-                    <input value={accentColor} onChange={(e) => setAccentColor(e.target.value)} style={{ ...inputStyle, flex: 1, padding: "8px" }} />
+                  <div>
+                    <label style={labelStyle}>Color</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input 
+                        type="color" 
+                        value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (selectedLayerId === null) updateAllLayers("color", val);
+                          else updateSelectedLayer("color", val);
+                        }} 
+                        style={{ width: 36, height: 36, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer", padding: 0 }} 
+                      />
+                      <input 
+                        value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (selectedLayerId === null) updateAllLayers("color", val);
+                          else updateSelectedLayer("color", val);
+                        }} 
+                        style={{ ...inputStyle, flex: 1, padding: "8px" }} 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Size</label>
+                    <input 
+                      type="number" 
+                      value={selectedLayerId === null ? textLayers[0].size : selectedLayer.size} 
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 20;
+                        if (selectedLayerId === null) updateAllLayers("size", val);
+                        else updateSelectedLayer("size", val);
+                      }} 
+                      style={inputStyle} 
+                    />
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label style={labelStyle}>Header Size</label>
-                  <input type="number" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value) || 20)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Sub Size</label>
-                  <input type="number" value={subFontSize} onChange={(e) => setSubFontSize(parseInt(e.target.value) || 12)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>X Align (%)</label>
+                  <label style={labelStyle}>Global X Align (%)</label>
                   <input type="number" value={textX} onChange={(e) => setTextX(parseInt(e.target.value) || 0)} style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Y Align (%)</label>
+                  <label style={labelStyle}>Global Y Align (%)</label>
                   <input type="number" value={textY} onChange={(e) => setTextY(parseInt(e.target.value) || 0)} style={inputStyle} />
                 </div>
               </div>
@@ -696,22 +725,53 @@ export default function ImageGenerations() {
               {/* Box showing the typography overlay styled in real-time */}
               <div style={{
                 width: 320, padding: 24, borderRadius: "var(--radius-md)", 
-                fontFamily: `"${selectedFont}", sans-serif`, color: textColor, textShadow: "0 1px 3px rgba(0,0,0,0.2)"
+                textShadow: "0 1px 3px rgba(0,0,0,0.2)"
               }}>
-                <div style={{ fontSize: fontSize * 0.7, fontWeight: 900, lineHeight: lineHeight }}>
-                  {line1 && <div style={{ color: textColor }}>{line1}</div>}
-                  {line2 && <div style={{ color: accentColor }}>{line2}</div>}
-                  {line3 && <div style={{ color: textColor }}>{line3}</div>}
-                  {line4 && <div style={{ color: accentColor }}>{line4}</div>}
+                <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
+                  {textLayers.map(layer => layer.text && (
+                    <div 
+                      key={layer.id}
+                      onClick={() => setSelectedLayerId(layer.id)}
+                      style={{ 
+                        color: layer.color, 
+                        fontFamily: `"${layer.font}", sans-serif`, 
+                        fontSize: layer.size * 0.7,
+                        cursor: "pointer",
+                        border: selectedLayerId === layer.id ? "1px dashed #666" : "1px solid transparent",
+                        padding: 2,
+                        margin: -2
+                      }}
+                    >
+                      {layer.text}
+                    </div>
+                  ))}
                 </div>
-                {(line1 || line2 || line3 || line4) && subText.trim() !== "" && (
-                  <div style={{ width: 30, height: 3, background: accentColor, margin: "12px 0" }} />
+                {textLayers.some(l => l.text.trim() !== "") && subTextLayer.text.trim() !== "" && (
+                  <div style={{ width: 30, height: 3, background: textLayers[1]?.color || "#2563eb", margin: "12px 0" }} />
                 )}
-                {subText && (
-                  <div style={{ fontSize: subFontSize * 0.8, fontWeight: 600, opacity: 0.9, whiteSpace: "pre-line", lineHeight: 1.3 }}>
-                    {subText}
+                {subTextLayer.text && (
+                  <div 
+                    onClick={() => setSelectedLayerId('sub')}
+                    style={{ 
+                      color: subTextLayer.color,
+                      fontFamily: `"${subTextLayer.font}", sans-serif`,
+                      fontSize: subTextLayer.size * 0.8, 
+                      fontWeight: 600, 
+                      opacity: 0.9, 
+                      whiteSpace: "pre-line", 
+                      lineHeight: 1.3,
+                      cursor: "pointer",
+                      border: selectedLayerId === 'sub' ? "1px dashed #666" : "1px solid transparent",
+                      padding: 2,
+                      margin: -2
+                    }}
+                  >
+                    {subTextLayer.text}
                   </div>
                 )}
+                <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: 16, textAlign: "center", fontStyle: "italic" }}>
+                  (Click any text above to style it individually)
+                </div>
               </div>
             </div>
           </div>
