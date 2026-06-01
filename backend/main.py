@@ -774,6 +774,7 @@ Modify ONLY according to the user request.
 
 
 import base64
+import traceback
 
 class GenerateImageRequest(BaseModel):
     prompt: str
@@ -790,10 +791,14 @@ async def generate_image(req: GenerateImageRequest):
         # Configure image generation config
         image_config = None
         if req.aspect_ratio:
-            image_config = types.ImageConfig(aspect_ratio=req.aspect_ratio)
+            # Under some versions of the SDK, aspect_ratio is restricted or handled as string.
+            image_config = types.ImageConfig(
+                aspect_ratio=req.aspect_ratio,
+                output_mime_type="image/png"
+            )
             
         cfg = types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
+            response_modalities=["IMAGE", "TEXT"],
             image_config=image_config
         )
         
@@ -804,23 +809,31 @@ async def generate_image(req: GenerateImageRequest):
         )
         
         # Look for inline image data in parts
-        for candidate in response.candidates:
-            if candidate.content and candidate.content.parts:
-                for part in candidate.content.parts:
-                    if part.inline_data:
-                        mime_type = part.inline_data.mime_type
-                        image_bytes = part.inline_data.data
-                        base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                        return {
-                            "status": "success",
-                            "mime_type": mime_type,
-                            "image": f"data:{mime_type};base64,{base64_image}"
-                        }
-                        
-        raise HTTPException(status_code=500, detail="No image data returned from Gemini.")
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if part.inline_data:
+                            mime_type = part.inline_data.mime_type
+                            image_bytes = part.inline_data.data
+                            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                            return {
+                                "status": "success",
+                                "mime_type": mime_type,
+                                "image": f"data:{mime_type};base64,{base64_image}"
+                            }
+                            
+        # If no image found in modalities list, fall back to simple call or print text details
+        response_text = ""
+        try:
+            response_text = response.text
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"No image data returned from Gemini. Model response text: {response_text}")
     except Exception as e:
-        logger.error(f"Image generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+        trace_str = traceback.format_exc()
+        logger.error(f"Image generation error: {e}\n{trace_str}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}. Traceback: {trace_str}")
 
 
 

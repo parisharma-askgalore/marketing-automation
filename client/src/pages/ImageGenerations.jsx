@@ -122,7 +122,14 @@ export default function ImageGenerations() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate image base scene.");
+        let errMsg = "Failed to generate image base scene.";
+        try {
+          const errData = await response.json();
+          if (errData && errData.detail) {
+            errMsg = errData.detail;
+          }
+        } catch (e) {}
+        throw new Error(errMsg);
       }
 
       const data = await response.json();
@@ -131,7 +138,7 @@ export default function ImageGenerations() {
       }
     } catch (error) {
       console.error("Base scene generation error:", error);
-      alert("Error generating base scene: " + error.message);
+      alert("Error: " + error.message);
     } finally {
       setGeneratingBg(false);
     }
