@@ -130,17 +130,19 @@ export default function ImageGenerations() {
         })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Failed to optimize prompt.");
+        const reason = data?.error || data?.details || `HTTP ${response.status}`;
+        throw new Error(reason);
       }
 
-      const data = await response.json();
       if (data.optimizedPrompt) {
         setUserPrompt(data.optimizedPrompt);
       }
     } catch (error) {
       console.error("Optimize prompt error:", error);
-      alert("Error: " + error.message);
+      alert("Optimize Prompt Error: " + error.message);
     } finally {
       setIsOptimizing(false);
     }
@@ -151,17 +153,21 @@ export default function ImageGenerations() {
     if (!searchQuery.trim()) return;
     try {
       setIsSearching(true);
+      setSearchResults([]);
       const response = await fetch("/api/search-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, limit: 10 })
+        body: JSON.stringify({ query: searchQuery, limit: 12 })
       });
-      if (!response.ok) throw new Error("Search failed");
       const data = await response.json();
+      if (!response.ok) {
+        const reason = data?.error || `HTTP ${response.status}`;
+        throw new Error(reason);
+      }
       setSearchResults(data.images || []);
     } catch (err) {
       console.error("Image search error:", err);
-      alert("Error: " + err.message);
+      alert("Search Error: " + err.message);
     } finally {
       setIsSearching(false);
     }
