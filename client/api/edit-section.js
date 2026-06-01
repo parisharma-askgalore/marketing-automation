@@ -1,7 +1,9 @@
 export default async function handler(req, res) {
+  
   try {
+    const backendUrl = (process.env.BACKEND_URL || "https://marketing-automation-mkei.onrender.com/webhook").replace(/\/$/, "");
     const response = await fetch(
-      "https://marketing-automation-mkei.onrender.com/webhook/edit-section",
+      `${backendUrl}/edit-section`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
