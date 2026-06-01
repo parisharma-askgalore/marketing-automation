@@ -103,8 +103,36 @@ export default function ImageGenerations() {
 
   // Merge & Canvas State
   const canvasRef = useRef(null);
+  const textCanvasRef = useRef(null);
   const [finalImage, setFinalImage] = useState(null);
   const [merging, setMerging] = useState(false);
+
+  // Drag State for Text
+  const [dragInfo, setDragInfo] = useState({ isDragging: false, startX: 0, startY: 0, initTextX: 0, initTextY: 0 });
+
+  const handlePointerDown = (e) => {
+    setDragInfo({
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      initTextX: textX,
+      initTextY: textY
+    });
+    e.target.setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e) => {
+    if (!dragInfo.isDragging) return;
+    const dx = e.clientX - dragInfo.startX;
+    const dy = e.clientY - dragInfo.startY;
+    setTextX(dragInfo.initTextX + dx);
+    setTextY(dragInfo.initTextY + dy);
+  };
+  const handlePointerUp = (e) => {
+    if (dragInfo.isDragging) {
+      setDragInfo(prev => ({ ...prev, isDragging: false }));
+      e.target.releasePointerCapture(e.pointerId);
+    }
+  };
 
   // Dynamic Google Font Injection
   useEffect(() => {
@@ -341,6 +369,28 @@ export default function ImageGenerations() {
     const link = document.createElement("a");
     link.download = `creative_generation_${Date.now()}.png`;
     link.href = finalImage;
+    link.click();
+  };
+
+  const handleDownloadText = () => {
+    const canvas = textCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    
+    let width = 600;
+    let height = 600;
+    if (aspectRatio === "9:16") { width = 450; height = 800; }
+    else if (aspectRatio === "16:9") { width = 800; height = 450; }
+    
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height); // Transparent
+    drawTextOverlay(ctx, width, height);
+    
+    const link = document.createElement("a");
+    link.download = `typography_overlay_${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
     link.click();
   };
 
@@ -714,19 +764,44 @@ export default function ImageGenerations() {
             background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
           }}>
             <div style={{
-              display: "flex", alignItems: "center", justify: "space-between", padding: "12px 20px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px",
               borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
             }}>
               <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
                 Layer 1: Text Wall Layer (Transparent PNG Model)
               </span>
+              <button 
+                onClick={handleDownloadText} 
+                style={{
+                  fontSize: "0.75rem", fontWeight: 600, padding: "4px 10px", borderRadius: "var(--radius-sm)",
+                  background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s"
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-tertiary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-primary)"; }}
+              >
+                <DownloadIcon /> Download Text PNG
+              </button>
             </div>
-            <div style={{ padding: 20, display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px" }}>
+            <div style={{ padding: 20, display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px", position: "relative", overflow: "hidden", minHeight: 320 }}>
+              {/* Hidden text canvas for exporting PNG */}
+              <canvas ref={textCanvasRef} style={{ display: "none" }} />
+              
               {/* Box showing the typography overlay styled in real-time */}
-              <div style={{
-                width: 320, padding: 24, borderRadius: "var(--radius-md)", 
-                textShadow: "0 1px 3px rgba(0,0,0,0.2)"
-              }}>
+              <div 
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                style={{
+                  position: "absolute",
+                  left: 0, top: 0,
+                  transform: `translate(${textX}px, ${textY}px)`,
+                  cursor: dragInfo.isDragging ? "grabbing" : "grab",
+                  textShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  userSelect: "none",
+                  touchAction: "none"
+                }}
+              >
                 <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
                   {textLayers.map(layer => layer.text && (
                     <div 
