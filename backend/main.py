@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 # Load env variables
@@ -821,6 +820,8 @@ async def generate_image(req: GenerateImageRequest):
                 }
                 
         raise HTTPException(status_code=500, detail=f"No image data returned in Grok response: {data}")
+    except HTTPException:
+        raise
     except Exception as e:
         trace_str = traceback.format_exc()
         logger.error(f"Grok Image generation error: {e}\n{trace_str}")
