@@ -782,56 +782,49 @@ class GenerateImageRequest(BaseModel):
 
 @app.post("/api/generate-image")
 async def generate_image(req: GenerateImageRequest):
-    if not gemini_client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
+    xai_api_key = os.getenv("XAI_API_KEY")
+    if not xai_api_key:
+        raise HTTPException(status_code=500, detail="XAI_API_KEY is not configured on the server.")
     
     try:
-        logger.info(f"Generating image with prompt: {req.prompt[:150]}...")
+        logger.info(f"Generating Grok image with prompt: {req.prompt[:150]}...")
         
-        # Configure image generation config
-        image_config = None
-        if req.aspect_ratio:
-            image_config = types.ImageConfig(
-                aspect_ratio=req.aspect_ratio
-            )
+        headers = {
+            "Authorization": f"Bearer {xai_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "grok-imagine-image-quality",
+            "prompt": req.prompt,
+            "aspect_ratio": req.aspect_ratio or "1:1",
+            "response_format": "b64_json"
+        }
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post("https://api.x.ai/v1/images/generations", headers=headers, json=payload)
             
-        cfg = types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            image_config=image_config
-        )
-        
-        response = gemini_client.models.generate_content(
-            model="gemini-3.1-flash-image-preview",
-            contents=req.prompt,
-            config=cfg
-        )
-        
-        # Look for inline image data in parts
-        if response.candidates:
-            for candidate in response.candidates:
-                if candidate.content and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if part.inline_data:
-                            mime_type = part.inline_data.mime_type
-                            image_bytes = part.inline_data.data
-                            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                            return {
-                                "status": "success",
-                                "mime_type": mime_type,
-                                "image": f"data:{mime_type};base64,{base64_image}"
-                            }
-                            
-        # If no image found in modalities list, fall back to simple call or print text details
-        response_text = ""
-        try:
-            response_text = response.text
-        except Exception:
-            pass
-        raise HTTPException(status_code=500, detail=f"No image data returned from Gemini. Model response text: {response_text}")
+            if not r.is_success:
+                error_text = r.text
+                logger.error(f"Grok API error: {r.status_code} - {error_text}")
+                raise HTTPException(status_code=502, detail=f"Grok API returned error: {error_text}")
+                
+            data = r.json()
+            
+        if "data" in data and len(data["data"]) > 0:
+            b64_data = data["data"][0].get("b64_json")
+            if b64_data:
+                return {
+                    "status": "success",
+                    "mime_type": "image/png",
+                    "image": f"data:image/png;base64,{b64_data}"
+                }
+                
+        raise HTTPException(status_code=500, detail=f"No image data returned in Grok response: {data}")
     except Exception as e:
         trace_str = traceback.format_exc()
-        logger.error(f"Image generation error: {e}\n{trace_str}")
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}. Traceback: {trace_str}")
+        logger.error(f"Grok Image generation error: {e}\n{trace_str}")
+        raise HTTPException(status_code=500, detail=f"Grok Image generation failed: {str(e)}")
 
 
 

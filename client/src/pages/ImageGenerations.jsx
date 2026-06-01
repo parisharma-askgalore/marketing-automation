@@ -293,7 +293,7 @@ export default function ImageGenerations() {
             color: "var(--text-secondary)", padding: "5px 12px", borderRadius: "var(--radius-md)",
             display: "flex", alignItems: "center", gap: 6
           }}>
-            Model: gemini-3.1-flash-image-preview
+            Model: grok-imagine-image-quality
           </span>
         </div>
       </div>
@@ -591,7 +591,7 @@ export default function ImageGenerations() {
               borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
             }}>
               <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                Layer 2: Character + Background Layer (Gemini-3.1-Flash-Image)
+                Layer 2: Character + Background Layer (Grok Imagine)
               </span>
             </div>
             <div style={{ padding: 20, display: "flex", justifyContent: "center", background: "var(--bg-tertiary)", minHeight: 260, alignItems: "center" }}>
