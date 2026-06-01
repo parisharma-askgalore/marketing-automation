@@ -773,6 +773,59 @@ Modify ONLY according to the user request.
     }
 
 
+import base64
+
+class GenerateImageRequest(BaseModel):
+    prompt: str
+    aspect_ratio: Optional[str] = "1:1"
+
+@app.post("/api/generate-image")
+async def generate_image(req: GenerateImageRequest):
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
+    
+    try:
+        logger.info(f"Generating image with prompt: {req.prompt[:150]}...")
+        
+        # Configure image generation config
+        image_config = None
+        if req.aspect_ratio:
+            image_config = types.ImageConfig(aspect_ratio=req.aspect_ratio)
+            
+        cfg = types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=image_config
+        )
+        
+        response = gemini_client.models.generate_content(
+            model="gemini-3.1-flash-image-preview",
+            contents=req.prompt,
+            config=cfg
+        )
+        
+        # Look for inline image data in parts
+        for candidate in response.candidates:
+            if candidate.content and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if part.inline_data:
+                        mime_type = part.inline_data.mime_type
+                        image_bytes = part.inline_data.data
+                        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                        return {
+                            "status": "success",
+                            "mime_type": mime_type,
+                            "image": f"data:{mime_type};base64,{base64_image}"
+                        }
+                        
+        raise HTTPException(status_code=500, detail="No image data returned from Gemini.")
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+
+
+
+
+
 @app.get("/api/get-projects")
 async def get_projects():
     if not NOTION_API_KEY:

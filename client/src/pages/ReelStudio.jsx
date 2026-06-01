@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import ImageGenerations from "./ImageGenerations";
+
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STEP_ORDER = ["input", "hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"];
@@ -85,6 +87,14 @@ const LayersIcon = () => (
     <polygon points="12 2 2 7 12 12 22 7 12 2" />
     <polyline points="2 17 12 22 22 17" />
     <polyline points="2 12 12 17 22 12" />
+  </svg>
+);
+const TrashIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
 
@@ -358,6 +368,7 @@ function Sidebar({ tab, setTab, open, onClose }) {
   const navItems = [
     { key: "current", label: "Current Project", icon: <LayersIcon /> },
     { key: "past",    label: "Past Projects",   icon: <FolderIcon /> },
+    { key: "imageGen",label: "Image Generations",icon: <ImageIcon /> },
   ];
 
   const sidebarContent = (
@@ -996,6 +1007,7 @@ function PastProjects() {
   const [selected, setSelected] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -1011,6 +1023,20 @@ function PastProjects() {
     };
     fetchProjects();
   }, []);
+
+  const handleDelete = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm("Delete this project? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await fetch(`/api/delete-project/${id}`, { method: "DELETE" });
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (selected) return <PastProjectDetail project={selected} onBack={() => setSelected(null)} />;
 
@@ -1040,36 +1066,70 @@ function PastProjects() {
         </div>
       ) : (
         projects.map((p) => (
-          <button
+          <div
             key={p.id}
-            onClick={() => setSelected(p)}
-            style={{
-              width: "100%", textAlign: "left", background: "var(--bg-primary)",
-              border: "1px solid var(--border-color)", borderRadius: "var(--radius-lg)",
-              padding: "18px 20px", cursor: "pointer", marginBottom: 8,
-              transition: "all 0.15s", display: "block", fontFamily: "inherit",
+            style={{ position: "relative", marginBottom: 8 }}
+            onMouseEnter={(e) => {
+              e.currentTarget.querySelector(".delete-btn").style.opacity = "1";
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.boxShadow = "var(--shadow-md)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.boxShadow = "none"; }}
+            onMouseLeave={(e) => {
+              e.currentTarget.querySelector(".delete-btn").style.opacity = "0";
+            }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)", fontFamily: "inherit" }}>{p.hook}</div>
-                <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>{p.date} · {p.tone} · {p.audience}</p>
+            <button
+              onClick={() => setSelected(p)}
+              style={{
+                width: "100%", textAlign: "left", background: "var(--bg-primary)",
+                border: "1px solid var(--border-color)", borderRadius: "var(--radius-lg)",
+                padding: "18px 20px", cursor: "pointer",
+                transition: "all 0.15s", display: "block", fontFamily: "inherit",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.boxShadow = "var(--shadow-md)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.boxShadow = "none"; }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ paddingRight: 36 }}>
+                  <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-primary)", fontFamily: "inherit" }}>{p.hook}</div>
+                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>{p.date} · {p.tone} · {p.audience}</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: "0.7rem", fontWeight: 600, fontFamily: "var(--font-mono)",
+                    textTransform: "uppercase", letterSpacing: "0.08em",
+                    background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                    color: "var(--text-secondary)", padding: "3px 9px", borderRadius: "var(--radius-sm)",
+                  }}>
+                    {p.status}
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}><ChevronRightIcon /></span>
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{
-                  fontSize: "0.7rem", fontWeight: 600, fontFamily: "var(--font-mono)",
-                  textTransform: "uppercase", letterSpacing: "0.08em",
-                  background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-                  color: "var(--text-secondary)", padding: "3px 9px", borderRadius: "var(--radius-sm)",
-                }}>
-                  {p.status}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}><ChevronRightIcon /></span>
-              </div>
-            </div>
-          </button>
+            </button>
+
+            {/* Delete button — fades in on card hover */}
+            <button
+              className="delete-btn"
+              onClick={(e) => handleDelete(e, p.id)}
+              title="Delete project"
+              style={{
+                position: "absolute", top: "50%", right: 52,
+                transform: "translateY(-50%)",
+                opacity: 0, transition: "opacity 0.15s, background 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 28, height: 28, borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-color)",
+                background: "var(--bg-primary)",
+                color: deletingId === p.id ? "var(--text-muted)" : "var(--text-secondary)",
+                cursor: deletingId === p.id ? "wait" : "pointer",
+                zIndex: 2,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; e.currentTarget.style.borderColor = "#fca5a5"; e.currentTarget.style.color = "#dc2626"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-primary)"; e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+              disabled={deletingId === p.id}
+            >
+              {deletingId === p.id ? <SpinnerIcon size={12} /> : <TrashIcon />}
+            </button>
+          </div>
         ))
       )}
     </main>
@@ -1167,7 +1227,7 @@ export default function Studio() {
 
         {/* Page content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {tab === "current" ? <CurrentProject /> : <PastProjects />}
+          {tab === "current" ? <CurrentProject /> : tab === "imageGen" ? <ImageGenerations /> : <PastProjects />}
         </div>
       </div>
     </div>
