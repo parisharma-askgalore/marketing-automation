@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 # Load env variables
@@ -39,9 +40,8 @@ if not NOTION_API_KEY:
 if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY is not set.")
 
-# Configure Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Configure Gemini client
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # Notion API Headers
 notion_headers = {
@@ -161,15 +161,17 @@ def get_title(properties: dict, name: str) -> str:
 
 # Helper: Gemini JSON Generation
 def generate_json(prompt: str) -> dict:
-    if not GEMINI_API_KEY:
+    if not gemini_client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
     
     model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     try:
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
+        response = gemini_client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
         return json.loads(response.text)
     except Exception as e:
@@ -222,6 +224,11 @@ async def update_notion_page(page_id: str, properties: dict):
         except Exception as e:
             logger.error(f"Notion connection error: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to connect to Notion: {str(e)}")
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "Marketing Automation Backend"}
 
 
 @app.get("/health")
@@ -704,13 +711,15 @@ Modify ONLY according to the user request.
 """
     
     # Non-structured response from Gemini
-    if not GEMINI_API_KEY:
+    if not gemini_client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
         
     model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     try:
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
+        response = gemini_client.models.generate_content(
+            model=model_name,
+            contents=prompt
+        )
         updated_content = response.text.strip()
     except Exception as e:
         logger.error(f"Gemini generation error: {e}")
