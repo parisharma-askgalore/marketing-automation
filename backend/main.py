@@ -791,10 +791,8 @@ async def generate_image(req: GenerateImageRequest):
         # Configure image generation config
         image_config = None
         if req.aspect_ratio:
-            # Under some versions of the SDK, aspect_ratio is restricted or handled as string.
             image_config = types.ImageConfig(
-                aspect_ratio=req.aspect_ratio,
-                output_mime_type="image/png"
+                aspect_ratio=req.aspect_ratio
             )
             
         cfg = types.GenerateContentConfig(
