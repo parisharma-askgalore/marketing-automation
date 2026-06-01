@@ -848,7 +848,7 @@ Global Prompt Aspects to factor in:
 
 Number of reference images provided by the user: {req.referencesCount}
 
-Task: Write a highly optimized prompt for an image generation model (like Midjourney, Grok Imagine, Stable Diffusion). 
+Task: Write a highly optimized prompt for a high-end AI image generation model. 
 - The prompt should describe the scene clearly based on the user's direction.
 - It MUST seamlessly incorporate the style, physics, and constraints from the Global Prompt.
 - If reference images are provided ({req.referencesCount}), implicitly suggest referencing the specific subject/assets in those images.
@@ -872,27 +872,55 @@ from duckduckgo_search import DDGS
 async def search_images(req: SearchImagesRequest):
     try:
         results = []
-        with DDGS() as ddgs:
-            # We fetch images from duckduckgo
-            ddgs_images = ddgs.images(
-                keywords=req.query,
-                region="wt-wt",
-                safesearch="moderate",
-                size=None,
-                color=None,
-                type_image=None,
-                layout=None,
-                license_image=None,
-                max_results=req.limit,
-            )
-            for r in ddgs_images:
-                results.append({
-                    "title": r.get("title"),
-                    "image": r.get("image"),
-                    "thumbnail": r.get("thumbnail"),
-                    "url": r.get("url"),
-                    "source": r.get("source")
-                })
+        try:
+            with DDGS() as ddgs:
+                ddgs_images = ddgs.images(
+                    keywords=req.query,
+                    region="wt-wt",
+                    safesearch="moderate",
+                    max_results=req.limit,
+                )
+                for r in ddgs_images:
+                    results.append({
+                        "title": r.get("title", ""),
+                        "image": r.get("image", ""),
+                        "thumbnail": r.get("thumbnail", ""),
+                        "url": r.get("url", ""),
+                        "source": "DuckDuckGo"
+                    })
+        except Exception as ddg_err:
+            logger.warning(f"DDG search failed (possibly ratelimited): {ddg_err}. Falling back to Wikimedia Commons.")
+            # Fallback to Wikimedia Commons API
+            async with httpx.AsyncClient() as client:
+                wiki_url = "https://en.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "format": "json",
+                    "prop": "pageimages",
+                    "generator": "prefixsearch",
+                    "redirects": 1,
+                    "formatversion": 2,
+                    "piprop": "original|thumbnail",
+                    "pithumbsize": 600,
+                    "pilimit": req.limit or 10,
+                    "gpssearch": req.query,
+                    "gpslimit": req.limit or 10
+                }
+                r = await client.get(wiki_url, params=params)
+                if r.is_success:
+                    pages = r.json().get("query", {}).get("pages", [])
+                    for page in pages:
+                        thumbnail = page.get("thumbnail", {}).get("source")
+                        original = page.get("original", {}).get("source")
+                        if thumbnail or original:
+                            results.append({
+                                "title": page.get("title", ""),
+                                "image": original or thumbnail,
+                                "thumbnail": thumbnail or original,
+                                "url": f"https://en.wikipedia.org/?curid={page.get('pageid')}",
+                                "source": "Wikimedia"
+                            })
+                            
         return {"images": results}
     except Exception as e:
         logger.error(f"Image search error: {e}")
