@@ -113,6 +113,11 @@ class EditSectionRequest(BaseModel):
     selectedHook: Optional[str] = None
     projectId: str
 
+class OptimizePromptRequest(BaseModel):
+    userDirection: str
+    globalPrompt: str
+    referencesCount: int
+
 
 # Helper: Notion property builders
 def to_rich_text_property(text: str) -> dict:
@@ -827,7 +832,35 @@ async def generate_image(req: GenerateImageRequest):
         logger.error(f"Grok Image generation error: {e}\n{trace_str}")
         raise HTTPException(status_code=500, detail=f"Grok Image generation failed: {str(e)}")
 
+@app.post("/api/optimize-prompt")
+async def optimize_prompt(req: OptimizePromptRequest):
+    prompt = f"""You are an expert AI image generation prompt engineer.
+    
+User Direction:
+{req.userDirection}
 
+Global Prompt Aspects to factor in:
+{req.globalPrompt}
+
+Number of reference images provided by the user: {req.referencesCount}
+
+Task: Write a highly optimized prompt for an image generation model (like Midjourney, Grok Imagine, Stable Diffusion). 
+- The prompt should describe the scene clearly based on the user's direction.
+- It MUST seamlessly incorporate the style, physics, and constraints from the Global Prompt.
+- If reference images are provided ({req.referencesCount}), implicitly suggest referencing the specific subject/assets in those images.
+- DO NOT include extra conversational text, just the final prompt.
+
+Return output matching this JSON schema exactly:
+{{
+  "optimizedPrompt": "string"
+}}
+"""
+    response_json = generate_json(prompt)
+    optimized_prompt = response_json.get("optimizedPrompt", "")
+    
+    return {
+        "optimizedPrompt": optimized_prompt
+    }
 
 
 

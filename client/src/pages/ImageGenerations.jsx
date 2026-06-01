@@ -60,6 +60,11 @@ export default function ImageGenerations() {
   const [references, setReferences] = useState([]);
   const fileInputRef = useRef(null);
 
+  // Optimization State
+  const [userDirection, setUserDirection] = useState("");
+  const [isOptimizing, setIsOptimizing] = useState(false);
+
+
   // Text Layer State
   const [line1, setLine1] = useState("Take");
   const [line2, setLine2] = useState("the climb.");
@@ -103,6 +108,37 @@ export default function ImageGenerations() {
 
   const removeReference = (index) => {
     setReferences(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Optimize Prompt using Backend API
+  const handleOptimizePrompt = async () => {
+    if (!userDirection.trim()) return;
+    try {
+      setIsOptimizing(true);
+      const response = await fetch("/api/optimize-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userDirection,
+          globalPrompt,
+          referencesCount: references.length
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to optimize prompt.");
+      }
+
+      const data = await response.json();
+      if (data.optimizedPrompt) {
+        setUserPrompt(data.optimizedPrompt);
+      }
+    } catch (error) {
+      console.error("Optimize prompt error:", error);
+      alert("Error: " + error.message);
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   // Generate Base Background + Character using Gemini
@@ -400,6 +436,32 @@ export default function ImageGenerations() {
               </span>
             </div>
             <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ padding: 16, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", marginBottom: 4 }}>
+                <label style={labelStyle}>Quick User Direction (Auto-Optimizer)</label>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <input
+                    value={userDirection}
+                    onChange={(e) => setUserDirection(e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                    placeholder="E.g., A futuristic robot holding a glowing orb"
+                  />
+                  <button
+                    onClick={handleOptimizePrompt}
+                    disabled={isOptimizing || !userDirection.trim()}
+                    style={{
+                      background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)",
+                      padding: "0 16px", fontSize: "0.85rem", fontWeight: 600, cursor: isOptimizing ? "not-allowed" : "pointer",
+                      display: "flex", alignItems: "center", gap: 6, opacity: isOptimizing ? 0.7 : 1
+                    }}
+                  >
+                    {isOptimizing ? <SpinnerIcon /> : <SparklesIcon />} Optimize
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+                  This will generate an optimized prompt below, factoring in your global prompt and references.
+                </p>
+              </div>
+
               <div>
                 <label style={labelStyle}>Subject & Scene Prompt</label>
                 <textarea
