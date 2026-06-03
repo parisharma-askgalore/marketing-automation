@@ -471,8 +471,7 @@ export default function ImageGenerations() {
 const HUGGINGFACE_MODELS = [
   { id: "black-forest-labs/FLUX.1-schnell", label: "FLUX.1 Schnell (Fast & High Quality)" },
   { id: "stabilityai/stable-diffusion-3.5-large", label: "Stable Diffusion 3.5 Large" },
-  { id: "stabilityai/stable-diffusion-3.5-large-turbo", label: "Stable Diffusion 3.5 Turbo" },
-  { id: "prompthero/openjourney-v4", label: "Openjourney v4 (Midjourney Style)" }
+  { id: "stabilityai/stable-diffusion-3.5-large-turbo", label: "Stable Diffusion 3.5 Turbo" }
 ];
 
 // ── Style tokens ───────────────────────────────────────────────────────────────
