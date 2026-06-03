@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 function SpinnerIcon({ size = 14 }) {

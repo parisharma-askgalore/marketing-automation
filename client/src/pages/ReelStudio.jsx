@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import ImageGenerations from "./ImageGenerations";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STEP_ORDER = ["input", "hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"];
