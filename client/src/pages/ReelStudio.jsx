@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import ImageGenerations from "./ImageGenerations";
+import WebLLMChatPanel from "../components/WebLLMChatPanel";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
@@ -481,6 +482,7 @@ function Sidebar({ tab, setTab, open, onClose }) {
 // ── Current Project ─────────────────────────────────────────────────────────────
 function CurrentProject({ onOpenSettings }) {
   const [step, setStep] = useState("input");
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [fields, setFields] = useState({ hook: "", tone: "", audience: "", assets: [] });
   const [selHook, setSelHook] = useState(null);
   const [script, setScript] = useState("");
@@ -647,9 +649,11 @@ function CurrentProject({ onOpenSettings }) {
   };
 
   return (
-    <>
-      <StepBar currentStep={step} />
-      <main style={{ maxWidth: "var(--max-width, 1400px)", margin: "0 auto", padding: "32px 24px 80px" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%" }}>
+      {/* ── MAIN CONTENT (Scrollable) ── */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        <StepBar currentStep={step} />
+        <main style={{ maxWidth: "var(--max-width, 1400px)", width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
         <div style={{ display: "flex", gap: 32, alignItems: "start" }}>
 
           {/* Page anchor nav */}
@@ -904,7 +908,13 @@ function CurrentProject({ onOpenSettings }) {
           </div>
         </div>
       </main>
-    </>
+      </div>
+
+      {/* ── CHAT PANEL ── */}
+      <aside style={{ width: isChatCollapsed ? "52px" : "380px", transition: "width 0.3s cubic-bezier(0.4,0,0.2,1)", flexShrink: 0, borderLeft: "1px solid var(--border-color)", background: "var(--bg-primary)", overflow: "hidden" }}>
+        <WebLLMChatPanel isCollapsed={isChatCollapsed} onToggleCollapse={() => setIsChatCollapsed(c => !c)} />
+      </aside>
+    </div>
   );
 }
 
@@ -1273,7 +1283,7 @@ export default function Studio() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex" }}>
+    <div style={{ height: "100vh", overflow: "hidden", background: "var(--bg-primary)", display: "flex" }}>
       <style>{`
         /* Sidebar visibility */
         .sidebar-desktop { display: none; height: 100vh; position: sticky; top: 0; flex-shrink: 0; }
