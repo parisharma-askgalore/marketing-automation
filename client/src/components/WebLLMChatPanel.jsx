@@ -9,7 +9,7 @@ export default function WebLLMChatPanel({ isCollapsed, onToggleCollapse }) {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("groq_api_key") || "");
   const [showSettings, setShowSettings] = useState(!localStorage.getItem("groq_api_key"));
-  const [model, setModel] = useState("llama3-8b-8192");
+  const [model, setModel] = useState("llama-3.1-8b-instant");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -140,10 +140,10 @@ export default function WebLLMChatPanel({ isCollapsed, onToggleCollapse }) {
               onChange={e => setModel(e.target.value)}
               style={{ width: "100%", padding: "8px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
             >
-              <option value="llama3-8b-8192">Llama 3 8B (Fast, standard)</option>
-              <option value="llama3-70b-8192">Llama 3 70B (High quality)</option>
+              <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast, standard)</option>
+              <option value="llama-3.3-70b-versatile">Llama 3.3 70B (High quality)</option>
               <option value="mixtral-8x7b-32768">Mixtral 8x7B (Large context)</option>
-              <option value="gemma-7b-it">Gemma 7B (Google)</option>
+              <option value="gemma2-9b-it">Gemma 2 9B (Google)</option>
             </select>
           </div>
 
