@@ -727,85 +727,93 @@ class GenerateImageRequest(BaseModel):
     references: Optional[list] = []
 
 
-def _aspect_to_size(aspect_ratio: str) -> dict:
-    """Convert aspect ratio string to width/height for Pollinations."""
+def _aspect_to_size(aspect_ratio: str) -> tuple:
+    """Convert aspect ratio string to (width, height) for Pollinations."""
     mapping = {
-        "1:1":  {"width": 1024, "height": 1024},
-        "9:16": {"width": 768,  "height": 1344},
-        "16:9": {"width": 1344, "height": 768},
+        "1:1":  (1024, 1024),
+        "9:16": (768,  1344),
+        "16:9": (1344, 768),
     }
-    return mapping.get(aspect_ratio, {"width": 1024, "height": 1024})
+    return mapping.get(aspect_ratio, (1024, 1024))
 
 
 @app.post("/api/generate-image")
 async def generate_image(req: GenerateImageRequest):
-    """Generate an image via Pollinations AI (free, no API key required)."""
+    """
+    Generate an image via Pollinations AI using the GET /image/{prompt} endpoint.
+    Returns base64-encoded PNG. No API key required for basic use.
+    For image-capable models with a reference, uploads the reference first via
+    media.pollinations.ai and passes the resulting URL as ?image=<url>.
+    """
     try:
+        import urllib.parse
+        import base64
+
         model = req.model or "flux"
-        size = _aspect_to_size(req.aspect_ratio or "1:1")
-        logger.info(f"Generating image via Pollinations model={model} prompt={req.prompt[:120]}...")
+        width, height = _aspect_to_size(req.aspect_ratio or "1:1")
+        seed = 42  # fixed seed for reproducibility; could be randomised
+        logger.info(f"Generating image via Pollinations model={model} size={width}x{height}")
 
-        # Build messages list (OpenAI-compatible)
-        content_parts = []
-
-        # Attach first reference image if model supports it and image was provided
-        if req.references and model in POLLINATIONS_IMAGE_CAPABLE_MODELS:
-            # Take the first reference image only (Pollinations supports one image input)
-            ref_data_url = req.references[0]
-            content_parts.append({
-                "type": "image_url",
-                "image_url": {"url": ref_data_url}
-            })
-
-        content_parts.append({"type": "text", "text": req.prompt})
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": content_parts if len(content_parts) > 1 else req.prompt
-                }
-            ],
-            "width": size["width"],
-            "height": size["height"],
-            "response_format": "b64_json",
-            "n": 1,
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            # Pollinations is free; no Auth header needed for anonymous use.
-            # If a POLLINATIONS_API_KEY env var is set, send it.
-        }
         pollinations_key = os.getenv("POLLINATIONS_API_KEY", "")
-        if pollinations_key:
-            headers["Authorization"] = f"Bearer {pollinations_key}"
+        auth_headers = {"Authorization": f"Bearer {pollinations_key}"} if pollinations_key else {}
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(
-                "https://gen.pollinations.ai/v1/images/generations",
-                headers=headers,
-                json=payload
-            )
+        params = {
+            "model":   model,
+            "width":   width,
+            "height":  height,
+            "seed":    seed,
+            "nologo":  "true",
+            "enhance": "false",
+        }
+
+        # ── Upload reference image if provided and model supports it ──────────
+        if req.references and model in POLLINATIONS_IMAGE_CAPABLE_MODELS:
+            ref_data_url = req.references[0]
+            # data:image/png;base64,<data>  →  bytes
+            try:
+                header, b64_part = ref_data_url.split(",", 1)
+                mime = header.split(":")[1].split(";")[0]  # e.g. image/png
+                img_bytes = base64.b64decode(b64_part)
+
+                async with httpx.AsyncClient(timeout=60.0) as up_client:
+                    upload_r = await up_client.post(
+                        "https://media.pollinations.ai/upload",
+                        headers=auth_headers,
+                        files={"file": ("reference.png", img_bytes, mime)},
+                    )
+                    if upload_r.is_success:
+                        media_url = upload_r.json().get("url") or upload_r.json().get("mediaUrl")
+                        if media_url:
+                            params["image"] = media_url
+                            logger.info(f"Reference image uploaded: {media_url}")
+                    else:
+                        logger.warning(f"Reference upload failed ({upload_r.status_code}): {upload_r.text[:200]} — generating without reference.")
+            except Exception as upload_err:
+                logger.warning(f"Could not upload reference image: {upload_err} — generating without reference.")
+
+        # ── Call Pollinations GET /image/{encoded_prompt} ────────────────────
+        encoded_prompt = urllib.parse.quote(req.prompt, safe="")
+        url = f"https://gen.pollinations.ai/image/{encoded_prompt}"
+
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+            r = await client.get(url, params=params, headers=auth_headers)
 
             if not r.is_success:
-                error_text = r.text
-                logger.error(f"Pollinations API error: {r.status_code} - {error_text}")
-                raise HTTPException(status_code=502, detail=f"Pollinations API returned error {r.status_code}: {error_text}")
+                logger.error(f"Pollinations image error: {r.status_code} — {r.text[:300]}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Pollinations returned {r.status_code}: {r.text[:300]}"
+                )
 
-            data = r.json()
+            image_bytes = r.content
+            content_type = r.headers.get("content-type", "image/png").split(";")[0].strip()
 
-        if "data" in data and len(data["data"]) > 0:
-            b64_data = data["data"][0].get("b64_json")
-            if b64_data:
-                return {
-                    "status": "success",
-                    "mime_type": "image/png",
-                    "image": f"data:image/png;base64,{b64_data}"
-                }
-
-        raise HTTPException(status_code=500, detail=f"No image data returned in Pollinations response: {data}")
+        b64_data = base64.b64encode(image_bytes).decode("utf-8")
+        return {
+            "status": "success",
+            "mime_type": content_type,
+            "image": f"data:{content_type};base64,{b64_data}",
+        }
     except HTTPException:
         raise
     except Exception as e:
