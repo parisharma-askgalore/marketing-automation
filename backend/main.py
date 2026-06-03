@@ -710,103 +710,58 @@ Modify ONLY according to the user request.
 import base64
 import traceback
 
-# ── Models that accept image input references ──────────────────────────────
-POLLINATIONS_IMAGE_CAPABLE_MODELS = {
-    "kontext", "klein", "gptimage", "gptimage-large", "nova-canvas",
-    "nanobanana", "nanobanana-2", "nanobanana-pro",
-    "grok-imagine", "grok-imagine-pro",
-    "seedream", "seedream-pro", "seedream5",
-    "qwen-image", "wan-image", "wan-image-pro",
-}
-
 class GenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: Optional[str] = "1:1"
-    model: Optional[str] = "flux"
-    # Base64 data-URL strings, e.g. "data:image/png;base64,..."
-    references: Optional[list] = []
-
-
-def _aspect_to_size(aspect_ratio: str) -> tuple:
-    """Convert aspect ratio string to (width, height) for Pollinations."""
-    mapping = {
-        "1:1":  (1024, 1024),
-        "9:16": (768,  1344),
-        "16:9": (1344, 768),
-    }
-    return mapping.get(aspect_ratio, (1024, 1024))
+    model: Optional[str] = "black-forest-labs/FLUX.1-schnell"
 
 
 @app.post("/api/generate-image")
 async def generate_image(req: GenerateImageRequest):
     """
-    Generate an image via Pollinations AI using the GET /image/{prompt} endpoint.
-    Returns base64-encoded PNG. No API key required for basic use.
-    For image-capable models with a reference, uploads the reference first via
-    media.pollinations.ai and passes the resulting URL as ?image=<url>.
+    Generate an image via Hugging Face Inference API.
+    Returns base64-encoded image data.
     """
     try:
-        import urllib.parse
         import base64
 
-        model = req.model or "flux"
-        width, height = _aspect_to_size(req.aspect_ratio or "1:1")
-        seed = 42  # fixed seed for reproducibility; could be randomised
-        logger.info(f"Generating image via Pollinations model={model} size={width}x{height}")
+        model = req.model or "black-forest-labs/FLUX.1-schnell"
+        logger.info(f"Generating image via Hugging Face model={model}")
 
-        pollinations_key = os.getenv("POLLINATIONS_API_KEY", "")
-        auth_headers = {"Authorization": f"Bearer {pollinations_key}"} if pollinations_key else {}
+        hf_key = os.getenv("HUGGINGFACE_API_KEY")
+        if not hf_key:
+            raise HTTPException(status_code=500, detail="HUGGINGFACE_API_KEY is not configured on the server.")
 
-        params = {
-            "model":   model,
-            "width":   width,
-            "height":  height,
-            "seed":    seed,
-            "nologo":  "true",
-            "enhance": "false",
+        headers = {
+            "Authorization": f"Bearer {hf_key}",
+            "Content-Type": "application/json",
         }
 
-        # ── Upload reference image if provided and model supports it ──────────
-        if req.references and model in POLLINATIONS_IMAGE_CAPABLE_MODELS:
-            ref_data_url = req.references[0]
-            # data:image/png;base64,<data>  →  bytes
-            try:
-                header, b64_part = ref_data_url.split(",", 1)
-                mime = header.split(":")[1].split(";")[0]  # e.g. image/png
-                img_bytes = base64.b64decode(b64_part)
+        payload = {
+            "inputs": req.prompt,
+        }
 
-                async with httpx.AsyncClient(timeout=60.0) as up_client:
-                    upload_r = await up_client.post(
-                        "https://media.pollinations.ai/upload",
-                        headers=auth_headers,
-                        files={"file": ("reference.png", img_bytes, mime)},
-                    )
-                    if upload_r.is_success:
-                        media_url = upload_r.json().get("url") or upload_r.json().get("mediaUrl")
-                        if media_url:
-                            params["image"] = media_url
-                            logger.info(f"Reference image uploaded: {media_url}")
-                    else:
-                        logger.warning(f"Reference upload failed ({upload_r.status_code}): {upload_r.text[:200]} — generating without reference.")
-            except Exception as upload_err:
-                logger.warning(f"Could not upload reference image: {upload_err} — generating without reference.")
-
-        # ── Call Pollinations GET /image/{encoded_prompt} ────────────────────
-        encoded_prompt = urllib.parse.quote(req.prompt, safe="")
-        url = f"https://gen.pollinations.ai/image/{encoded_prompt}"
+        url = f"https://api-inference.huggingface.co/models/{model}"
 
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-            r = await client.get(url, params=params, headers=auth_headers)
+            r = await client.post(url, headers=headers, json=payload)
 
             if not r.is_success:
-                logger.error(f"Pollinations image error: {r.status_code} — {r.text[:300]}")
+                # HF sometimes returns 503 while model is loading, we should bubble this up gracefully
+                logger.error(f"Hugging Face image error: {r.status_code} — {r.text[:300]}")
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Pollinations returned {r.status_code}: {r.text[:300]}"
+                    detail=f"Hugging Face returned {r.status_code}: {r.text[:300]}"
                 )
 
             image_bytes = r.content
-            content_type = r.headers.get("content-type", "image/png").split(";")[0].strip()
+            content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            
+            if content_type == "application/json":
+                # Handle edge cases where HF returns a success status code but actually returns an error JSON
+                err_text = r.text[:200]
+                logger.error(f"Hugging Face returned JSON instead of image: {err_text}")
+                raise HTTPException(status_code=502, detail=f"Hugging Face error: {err_text}")
 
         b64_data = base64.b64encode(image_bytes).decode("utf-8")
         return {
@@ -818,7 +773,7 @@ async def generate_image(req: GenerateImageRequest):
         raise
     except Exception as e:
         trace_str = traceback.format_exc()
-        logger.error(f"Pollinations image generation error: {e}\n{trace_str}")
+        logger.error(f"Hugging Face image generation error: {e}\n{trace_str}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 @app.post("/api/optimize-prompt")
