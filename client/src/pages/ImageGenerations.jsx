@@ -105,20 +105,47 @@ export default function ImageGenerations() {
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
 
   // Grid / Card Layout State
-  const defaultHeights = { global: 6, scene: 12, typography: 14, references: 8, layer2: 12, layer1: 12, layer3: 12 };
   const [expandedCards, setExpandedCards] = useState({
     global: true, references: true, scene: true, typography: true, layer1: true, layer2: true, layer3: true
   });
-  
-  // We use data-grid on the items directly to ensure they place correctly on all screen sizes on first load.
-  const [layouts, setLayouts] = useState(null);
+
+  // Explicit starting layout — prevents clustering in top-left on first load.
+  // Cards are arranged in a clean 2-column grid (12-col base).
+  const makeDefaultLayout = () => [
+    { i: 'global',     x: 0,  y: 0,  w: 7,  h: 6,  minW: 3, minH: 1 },
+    { i: 'references', x: 7,  y: 0,  w: 5,  h: 6,  minW: 3, minH: 1 },
+    { i: 'scene',      x: 0,  y: 6,  w: 7,  h: 11, minW: 4, minH: 1 },
+    { i: 'typography', x: 7,  y: 6,  w: 5,  h: 11, minW: 3, minH: 1 },
+    { i: 'layer2',     x: 0,  y: 17, w: 6,  h: 11, minW: 3, minH: 1 },
+    { i: 'layer1',     x: 6,  y: 17, w: 6,  h: 11, minW: 3, minH: 1 },
+    { i: 'layer3',     x: 0,  y: 28, w: 12, h: 11, minW: 6, minH: 1 },
+  ];
+
+  const [layouts, setLayouts] = useState({
+    lg: makeDefaultLayout(),
+    md: makeDefaultLayout(),
+    sm: makeDefaultLayout().map(i => ({ ...i, x: 0, w: Math.min(i.w, 6) })),
+    xs: makeDefaultLayout().map(i => ({ ...i, x: 0, w: 4 })),
+    xxs: makeDefaultLayout().map(i => ({ ...i, x: 0, w: 2 })),
+  });
 
   const toggleCard = (id) => {
     const isExpanding = !expandedCards[id];
     setExpandedCards(prev => ({ ...prev, [id]: isExpanding }));
+    // Snap height to 1 row when minimized, restore to default when expanding
+    const defaultH = makeDefaultLayout().find(item => item.i === id)?.h || 6;
+    setLayouts(prev => {
+      const updated = {};
+      for (const bp of Object.keys(prev)) {
+        updated[bp] = prev[bp].map(item =>
+          item.i === id ? { ...item, h: isExpanding ? defaultH : 1 } : item
+        );
+      }
+      return updated;
+    });
   };
 
-  const onLayoutChange = (layout, allLayouts) => {
+  const onLayoutChange = (_layout, allLayouts) => {
     setLayouts(allLayouts);
   };
 
@@ -374,19 +401,20 @@ export default function ImageGenerations() {
         {/* DRAGGABLE GRID WORKSPACE */}
         <ResponsiveGridLayout
           className="layout"
-          layouts={layouts || {}}
+          layouts={layouts}
           breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
           cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-          rowHeight={40}
+          rowHeight={36}
           onLayoutChange={onLayoutChange}
           draggableHandle=".drag-handle"
-          margin={[24, 24]}
+          margin={[20, 20]}
           useCSSTransforms={true}
-          preventCollision={false}
+          preventCollision={true}
           compactType="vertical"
+          isResizable={true}
         >
           {/* Global Prompts */}
-          <div key="global" data-grid={{ x: 0, y: 0, w: 7, h: expandedCards.global ? 8 : 1, minW: 3, minH: 1 }}>
+          <div key="global">
             <CardWrapper
               id="global" title="Global Style Prompts (Character & Physics Directives)" icon={<SparklesIcon />}
               isExpanded={expandedCards.global} onToggle={() => toggleCard("global")}
@@ -400,7 +428,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Reference Assets */}
-          <div key="references" data-grid={{ x: 7, y: 0, w: 5, h: expandedCards.references ? 8 : 1, minW: 3, minH: 1 }}>
+          <div key="references">
             <CardWrapper
               id="references" title="Reference Assets & Characters" icon={<span style={{ fontSize: "12px" }}>📁</span>}
               isExpanded={expandedCards.references} onToggle={() => toggleCard("references")}
@@ -432,7 +460,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Scene Generation Setup */}
-          <div key="scene" data-grid={{ x: 0, y: 8, w: 7, h: expandedCards.scene ? 14 : 1, minW: 4, minH: 1 }}>
+          <div key="scene">
             <CardWrapper
               id="scene" title="Scene & Subject Generation Setup (Base Layer)" icon={<SparklesIcon />}
               isExpanded={expandedCards.scene} onToggle={() => toggleCard("scene")}
@@ -479,7 +507,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Typography Wall Settings */}
-          <div key="typography" data-grid={{ x: 7, y: 8, w: 5, h: expandedCards.typography ? 14 : 1, minW: 3, minH: 1 }}>
+          <div key="typography">
             <CardWrapper
               id="typography" title="Typography Wall Settings (Overlay Layer)" icon={<span style={{ fontWeight: 900, fontSize: "14px" }}>T</span>}
               isExpanded={expandedCards.typography} onToggle={() => toggleCard("typography")}
@@ -537,7 +565,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Layer 2: Base Output (OUTPUT — visible on scroll) */}
-          <div key="layer2" data-grid={{ x: 0, y: 22, w: 6, h: expandedCards.layer2 ? 13 : 1, minW: 3, minH: 1 }}>
+          <div key="layer2">
             <CardWrapper
               id="layer2" title="Layer 2: Character + Background (Grok Imagine)" icon={<span style={{ fontSize: "12px" }}>🖼️</span>}
               isExpanded={expandedCards.layer2} onToggle={() => toggleCard("layer2")}
@@ -556,7 +584,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Layer 1: Text Wall PNG (OUTPUT — visible on scroll) */}
-          <div key="layer1" data-grid={{ x: 6, y: 22, w: 6, h: expandedCards.layer1 ? 13 : 1, minW: 3, minH: 1 }}>
+          <div key="layer1">
             <CardWrapper
               id="layer1" title="Layer 1: Text Wall Layer (Transparent PNG)" icon={<span style={{ fontSize: "12px" }}>🔤</span>}
               isExpanded={expandedCards.layer1} onToggle={() => toggleCard("layer1")}
@@ -584,7 +612,7 @@ export default function ImageGenerations() {
           </div>
 
           {/* Layer 3: Final Composited Ad (OUTPUT — visible on scroll) */}
-          <div key="layer3" data-grid={{ x: 0, y: 35, w: 12, h: expandedCards.layer3 ? 14 : 1, minW: 6, minH: 1 }}>
+          <div key="layer3">
             <CardWrapper
               id="layer3" title="Layer 3: Canvas Merger & Final Ad Composition" icon={<LayersIcon />}
               isExpanded={expandedCards.layer3} onToggle={() => toggleCard("layer3")}
