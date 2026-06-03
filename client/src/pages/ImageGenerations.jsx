@@ -226,7 +226,7 @@ export default function ImageGenerations() {
   };
 
   return (
-    <div style={{ display: "flex", width: "100%", height: "100vh", overflow: "hidden" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden" }}>
       {/* ── SCROLLABLE MAIN ── */}
       <main style={{ flex: 1, overflowY: "auto", padding: "28px 28px 80px 28px", minWidth: 0 }}>
 

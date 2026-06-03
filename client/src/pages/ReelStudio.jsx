@@ -1032,7 +1032,7 @@ function PastProjectDetail({ project, onBack }) {
   };
 
   return (
-    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px" }}>
+    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px", height: "100%", overflowY: "auto" }}>
       <button
         onClick={onBack}
         style={{
@@ -1161,7 +1161,7 @@ function PastProjects() {
 
   if (loading) {
     return (
-      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px" }}>
+      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px", height: "100%", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.875rem" }}>
           <SpinnerIcon size={14} /> Loading projects…
         </div>
@@ -1170,7 +1170,7 @@ function PastProjects() {
   }
 
   return (
-    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px" }}>
+    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px", height: "100%", overflowY: "auto" }}>
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "inherit" }}>Past Projects</h2>
         <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: 4 }}>{projects.length} project{projects.length !== 1 ? "s" : ""} found</p>
