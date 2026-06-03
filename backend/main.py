@@ -710,41 +710,92 @@ Modify ONLY according to the user request.
 import base64
 import traceback
 
+# ── Models that accept image input references ──────────────────────────────
+POLLINATIONS_IMAGE_CAPABLE_MODELS = {
+    "kontext", "klein", "gptimage", "gptimage-large", "nova-canvas",
+    "nanobanana", "nanobanana-2", "nanobanana-pro",
+    "grok-imagine", "grok-imagine-pro",
+    "seedream", "seedream-pro", "seedream5",
+    "qwen-image", "wan-image", "wan-image-pro",
+}
+
 class GenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: Optional[str] = "1:1"
+    model: Optional[str] = "flux"
+    # Base64 data-URL strings, e.g. "data:image/png;base64,..."
+    references: Optional[list] = []
+
+
+def _aspect_to_size(aspect_ratio: str) -> dict:
+    """Convert aspect ratio string to width/height for Pollinations."""
+    mapping = {
+        "1:1":  {"width": 1024, "height": 1024},
+        "9:16": {"width": 768,  "height": 1344},
+        "16:9": {"width": 1344, "height": 768},
+    }
+    return mapping.get(aspect_ratio, {"width": 1024, "height": 1024})
+
 
 @app.post("/api/generate-image")
 async def generate_image(req: GenerateImageRequest):
-    xai_api_key = os.getenv("XAI_API_KEY")
-    if not xai_api_key:
-        raise HTTPException(status_code=500, detail="XAI_API_KEY is not configured on the server.")
-    
+    """Generate an image via Pollinations AI (free, no API key required)."""
     try:
-        logger.info(f"Generating Grok image with prompt: {req.prompt[:150]}...")
-        
-        headers = {
-            "Authorization": f"Bearer {xai_api_key}",
-            "Content-Type": "application/json"
-        }
-        
+        model = req.model or "flux"
+        size = _aspect_to_size(req.aspect_ratio or "1:1")
+        logger.info(f"Generating image via Pollinations model={model} prompt={req.prompt[:120]}...")
+
+        # Build messages list (OpenAI-compatible)
+        content_parts = []
+
+        # Attach first reference image if model supports it and image was provided
+        if req.references and model in POLLINATIONS_IMAGE_CAPABLE_MODELS:
+            # Take the first reference image only (Pollinations supports one image input)
+            ref_data_url = req.references[0]
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": ref_data_url}
+            })
+
+        content_parts.append({"type": "text", "text": req.prompt})
+
         payload = {
-            "model": "grok-imagine-image-quality",
-            "prompt": req.prompt,
-            "aspect_ratio": req.aspect_ratio or "1:1",
-            "response_format": "b64_json"
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content_parts if len(content_parts) > 1 else req.prompt
+                }
+            ],
+            "width": size["width"],
+            "height": size["height"],
+            "response_format": "b64_json",
+            "n": 1,
         }
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post("https://api.x.ai/v1/images/generations", headers=headers, json=payload)
-            
+
+        headers = {
+            "Content-Type": "application/json",
+            # Pollinations is free; no Auth header needed for anonymous use.
+            # If a POLLINATIONS_API_KEY env var is set, send it.
+        }
+        pollinations_key = os.getenv("POLLINATIONS_API_KEY", "")
+        if pollinations_key:
+            headers["Authorization"] = f"Bearer {pollinations_key}"
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(
+                "https://gen.pollinations.ai/v1/images/generations",
+                headers=headers,
+                json=payload
+            )
+
             if not r.is_success:
                 error_text = r.text
-                logger.error(f"Grok API error: {r.status_code} - {error_text}")
-                raise HTTPException(status_code=502, detail=f"Grok API returned error: {error_text}")
-                
+                logger.error(f"Pollinations API error: {r.status_code} - {error_text}")
+                raise HTTPException(status_code=502, detail=f"Pollinations API returned error {r.status_code}: {error_text}")
+
             data = r.json()
-            
+
         if "data" in data and len(data["data"]) > 0:
             b64_data = data["data"][0].get("b64_json")
             if b64_data:
@@ -753,14 +804,14 @@ async def generate_image(req: GenerateImageRequest):
                     "mime_type": "image/png",
                     "image": f"data:image/png;base64,{b64_data}"
                 }
-                
-        raise HTTPException(status_code=500, detail=f"No image data returned in Grok response: {data}")
+
+        raise HTTPException(status_code=500, detail=f"No image data returned in Pollinations response: {data}")
     except HTTPException:
         raise
     except Exception as e:
         trace_str = traceback.format_exc()
-        logger.error(f"Grok Image generation error: {e}\n{trace_str}")
-        raise HTTPException(status_code=500, detail=f"Grok Image generation failed: {str(e)}")
+        logger.error(f"Pollinations image generation error: {e}\n{trace_str}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 @app.post("/api/optimize-prompt")
 async def optimize_prompt(req: OptimizePromptRequest):

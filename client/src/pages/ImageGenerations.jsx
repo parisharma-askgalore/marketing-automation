@@ -79,6 +79,7 @@ export default function ImageGenerations() {
   );
   const [userPrompt, setUserPrompt] = useState("A hyper-realistic premium female mountaineer holding a steel thermos mug, sitting on Everest basecamp rocks, looking directly at the camera with extreme detail, background of massive snowy blue sky mountains.");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [selectedModel, setSelectedModel] = useState("flux");
   const [generatingBg, setGeneratingBg] = useState(false);
   const [baseSceneImg, setBaseSceneImg] = useState(null);
   const [references, setReferences] = useState([]);
@@ -154,7 +155,16 @@ export default function ImageGenerations() {
   const handleGenerateBaseScene = async () => {
     try {
       setGeneratingBg(true);
-      const res = await fetch(`${API_BASE}/api/generate-image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: `${userPrompt}. Style: ${globalPrompt}`, aspect_ratio: aspectRatio }) });
+      const res = await fetch(`${API_BASE}/api/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `${userPrompt}. Style: ${globalPrompt}`,
+          aspect_ratio: aspectRatio,
+          model: selectedModel,
+          references: references.map(r => r.url),
+        })
+      });
       if (!res.ok) throw new Error("Failed to generate.");
       const data = await res.json();
       if (data.status === "success") setBaseSceneImg(data.image);
@@ -305,11 +315,21 @@ export default function ImageGenerations() {
                     <option value="16:9">16:9 Landscape</option>
                   </select>
                 </div>
-                <button onClick={handleGenerateBaseScene} disabled={generatingBg || !userPrompt.trim()}
-                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", fontWeight: 700, cursor: generatingBg ? "not-allowed" : "pointer", transition: "all 0.15s" }}>
-                  {generatingBg ? <><SpinnerIcon /> Generating…</> : <><SparklesIcon /> Generate Scene</>}
-                </button>
+                <div style={{ flex: 2 }}>
+                  <label style={lbl}>Pollinations Model</label>
+                  <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} style={sel}>
+                    {POLLINATIONS_MODELS.map(m => (
+                      <option key={m.id} value={m.id} disabled={m.paid}>
+                        {m.paid ? "🔒 " : ""}{m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              <button onClick={handleGenerateBaseScene} disabled={generatingBg || !userPrompt.trim()}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "11px 0", fontWeight: 700, cursor: generatingBg ? "not-allowed" : "pointer", transition: "all 0.15s" }}>
+                {generatingBg ? <><SpinnerIcon /> Generating…</> : <><SparklesIcon /> Generate Scene</>}
+              </button>
             </div>
           </Card>
 
@@ -375,7 +395,7 @@ export default function ImageGenerations() {
 
         {/* ── ROW 3: Base Output + Text PNG ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 0 }}>
-          <Card title="Layer 2: Character + Background (Grok Imagine)" icon="🖼️">
+          <Card title="Layer 2: Generated Scene (Pollinations AI)" icon="🖼️">
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", minHeight: 280 }}>
               {baseSceneImg ? (
                 <img src={baseSceneImg} alt="Base Scene" style={{ maxWidth: "100%", maxHeight: 360, objectFit: "contain", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }} />
@@ -445,6 +465,19 @@ export default function ImageGenerations() {
     </div>
   );
 }
+
+// ── Pollinations AI free image models ─────────────────────────────────────────
+const POLLINATIONS_MODELS = [
+  { id: "flux",           label: "FLUX Schnell – Fast & Free",            paid: false },
+  { id: "klein",          label: "FLUX.2 Klein 4B – Fast + Img Reference", paid: false },
+  { id: "kontext",        label: "FLUX.1 Kontext – In-context Editing",    paid: false },
+  { id: "zimage",         label: "Z-Image Turbo – Alibaba DiT 6B",         paid: false },
+  { id: "gptimage",       label: "GPT Image 1 Mini – Fast & Affordable",   paid: false },
+  { id: "gptimage-large", label: "GPT Image 1.5 – High Fidelity",          paid: false },
+  { id: "nova-canvas",    label: "Nova Canvas – Amazon Editing",            paid: false },
+  { id: "grok-imagine",   label: "🔒 Grok Imagine – Photorealistic",        paid: true  },
+  { id: "seedream",       label: "🔒 Seedream 4.0 – Photorealistic",        paid: true  },
+];
 
 // ── Style tokens ───────────────────────────────────────────────────────────────
 const lbl = { display: "block", fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: 5, fontFamily: "var(--font-mono)" };
