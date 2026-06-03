@@ -332,9 +332,12 @@ function StepBar({ currentStep }) {
 
 // ── Page Anchor Nav (sidebar) ──────────────────────────────────────────────────
 function PageNav({ visibleSteps }) {
-  const scrollTo = (key) => document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollTo = (key) => {
+    const el = document.getElementById(`section-${key}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
-    <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 32, height: "fit-content", alignSelf: "start" }}>
+    <div style={{ padding: "24px 12px" }}>
       <p style={{
         fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
         color: "var(--text-muted)", marginBottom: 10, fontFamily: "var(--font-mono)", padding: "0 8px",
@@ -361,7 +364,7 @@ function PageNav({ visibleSteps }) {
           </button>
         ))}
       </nav>
-    </aside>
+    </div>
   );
 }
 
@@ -707,25 +710,34 @@ function CurrentProject({ onOpenSettings }) {
   };
 
   return (
-    <div style={{ display: "flex", width: "100%", height: "100%" }}>
-      {/* ── MAIN CONTENT (Scrollable) ── */}
-      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        <StepBar currentStep={step} />
-        <main style={{ maxWidth: "var(--max-width, 1400px)", width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
-        <div style={{ display: "flex", gap: 32, alignItems: "start" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden" }}>
 
-          {/* Page anchor nav */}
-          <div className="page-nav-wrapper">
-            <PageNav visibleSteps={visibleSteps} />
+      {/* ── COLUMN 1: Page Nav (own scroll) ── */}
+      <div
+        className="page-nav-wrapper"
+        style={{
+          width: 220, flexShrink: 0,
+          height: "100%", overflowY: "auto",
+          borderRight: "1px solid var(--border-color)",
+          background: "var(--bg-primary)",
+        }}
+      >
+        <PageNav visibleSteps={visibleSteps} />
+      </div>
+
+      {/* ── COLUMN 2: Main Content (own scroll) ── */}
+      <div style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        {/* StepBar sticky at top of this column */}
+        <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--bg-primary)", borderBottom: "1px solid var(--border-color)" }}>
+          <StepBar currentStep={step} />
+        </div>
+
+        <main style={{ maxWidth: 860, width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+            <OutlineBtn onClick={onOpenSettings}>
+              <EditIcon /> Master Prompts
+            </OutlineBtn>
           </div>
-
-          {/* Main content */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              <OutlineBtn onClick={onOpenSettings}>
-                <EditIcon /> Master Prompts
-              </OutlineBtn>
-            </div>
 
             {/* INPUT */}
             <div id="section-input">
@@ -988,13 +1000,21 @@ function CurrentProject({ onOpenSettings }) {
             )}
 
             <div ref={bottomRef} />
-          </div>
-        </div>
-      </main>
+          </main>
       </div>
 
-      {/* ── CHAT PANEL ── */}
-      <aside style={{ width: isChatCollapsed ? "52px" : "380px", transition: "width 0.3s cubic-bezier(0.4,0,0.2,1)", flexShrink: 0, borderLeft: "1px solid var(--border-color)", background: "var(--bg-primary)", overflow: "hidden" }}>
+      {/* ── COLUMN 3: Chat Panel (own scroll) ── */}
+      <aside style={{
+        width: isChatCollapsed ? "52px" : "380px",
+        transition: "width 0.3s cubic-bezier(0.4,0,0.2,1)",
+        flexShrink: 0,
+        borderLeft: "1px solid var(--border-color)",
+        background: "var(--bg-primary)",
+        height: "100%",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      }}>
         <WebLLMChatPanel isCollapsed={isChatCollapsed} onToggleCollapse={() => setIsChatCollapsed(c => !c)} />
       </aside>
     </div>
