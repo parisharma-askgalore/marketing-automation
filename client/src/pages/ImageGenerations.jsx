@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-
-// ── Icons ──────────────────────────────────────────────────────────────────────
+import WebLLMChatPanel from "../components/WebLLMChatPanel";// ── Icons ──────────────────────────────────────────────────────────────────────
 function SpinnerIcon({ size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
@@ -66,8 +65,7 @@ export default function ImageGenerations() {
 
   // Image Search State
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
+  const [activeIframeUrl, setActiveIframeUrl] = useState("");
 
 
   // Text Layer State
@@ -195,26 +193,7 @@ export default function ImageGenerations() {
   const handleSearchImages = async (e) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
-    try {
-      setIsSearching(true);
-      setSearchResults([]);
-      const response = await fetch("/api/search-images", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, limit: 12 })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        const reason = data?.error || `HTTP ${response.status}`;
-        throw new Error(reason);
-      }
-      setSearchResults(data.images || []);
-    } catch (err) {
-      console.error("Image search error:", err);
-      alert("Search Error: " + err.message);
-    } finally {
-      setIsSearching(false);
-    }
+    setActiveIframeUrl(`https://www.pexels.com/search/${encodeURIComponent(searchQuery)}/`);
   };
 
   const addSearchedImageAsReference = (url, title) => {
@@ -416,7 +395,7 @@ export default function ImageGenerations() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }} className="fade-in">
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1.2fr) 350px", gap: 24, alignItems: "start" }} className="fade-in">
         
         {/* LEFT COLUMN: CONTROL & DIRECTIVES PANEL */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -489,32 +468,31 @@ export default function ImageGenerations() {
                   <input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search images on web..."
+                    placeholder="Search Pexels..."
                     style={{ ...inputStyle, flex: 1, padding: "8px 12px", fontSize: "0.8rem" }}
                   />
                   <button
                     type="submit"
-                    disabled={isSearching || !searchQuery.trim()}
+                    disabled={!searchQuery.trim()}
                     style={{
                       background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", 
-                      borderRadius: "var(--radius-md)", padding: "0 12px", fontSize: "0.8rem", fontWeight: 600, cursor: isSearching ? "not-allowed" : "pointer"
+                      borderRadius: "var(--radius-md)", padding: "0 12px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer"
                     }}
                   >
-                    {isSearching ? "..." : "Search"}
+                    Search
                   </button>
                 </form>
-                {searchResults.length > 0 && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
-                    {searchResults.map((res, i) => (
-                      <div 
-                        key={i} 
-                        onClick={() => addSearchedImageAsReference(res.image, res.title)}
-                        style={{ aspectRatio: "1/1", borderRadius: 4, overflow: "hidden", cursor: "pointer", border: "1px solid var(--border-color)" }}
-                        title="Click to add as reference"
-                      >
-                        <img src={res.thumbnail || res.image} alt={res.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      </div>
-                    ))}
+                {activeIframeUrl && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Pexels Results</span>
+                      <a href={activeIframeUrl} target="_blank" rel="noreferrer" style={{ fontSize: "0.75rem", color: "var(--accent)", textDecoration: "none" }}>Open in New Tab ↗</a>
+                    </div>
+                    <iframe 
+                      src={activeIframeUrl} 
+                      style={{ width: "100%", height: 400, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }}
+                      title="Pexels Image Search"
+                    />
                   </div>
                 )}
               </div>
@@ -933,6 +911,11 @@ export default function ImageGenerations() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* EXTRA RIGHT COLUMN: WebLLM Chat Panel */}
+        <div style={{ position: "sticky", top: 20, height: "calc(100vh - 120px)" }}>
+          <WebLLMChatPanel />
         </div>
 
       </div>
