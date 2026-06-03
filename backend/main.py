@@ -989,11 +989,7 @@ Return a structured report matching this JSON schema exactly:
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        raise
-    except Exception as e:
-        trace_str = traceback.format_exc()
-        logger.error(f"Hugging Face image generation error: {e}\n{trace_str}")
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+
 
 @app.post("/api/optimize-prompt")
 async def optimize_prompt(req: OptimizePromptRequest):
