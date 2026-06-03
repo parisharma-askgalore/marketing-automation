@@ -364,7 +364,7 @@ function PageNav({ visibleSteps }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
-function Sidebar({ tab, setTab, open, onClose, onOpenSettings }) {
+function Sidebar({ tab, setTab, open, onClose }) {
   const navItems = [
     { key: "current", label: "Current Project", icon: <LayersIcon /> },
     { key: "past",    label: "Past Projects",   icon: <FolderIcon /> },
@@ -435,24 +435,6 @@ function Sidebar({ tab, setTab, open, onClose, onOpenSettings }) {
         })}
       </nav>
 
-      {/* Settings Button */}
-      <div style={{ padding: "0 12px 16px" }}>
-        <button
-          onClick={() => { onClose?.(); onOpenSettings?.(); }}
-          style={{
-            width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 10px", borderRadius: "var(--radius-md)",
-            border: "none", cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
-            fontSize: "0.875rem", fontWeight: 500, background: "transparent", color: "var(--text-secondary)",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-secondary)"; e.currentTarget.style.color = "var(--text-primary)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-        >
-          <span style={{ opacity: 0.6 }}><EditIcon /></span>
-          Master Prompts
-        </button>
-      </div>
-
       {/* User */}
       <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{
@@ -496,7 +478,7 @@ function Sidebar({ tab, setTab, open, onClose, onOpenSettings }) {
 }
 
 // ── Current Project ─────────────────────────────────────────────────────────────
-function CurrentProject() {
+function CurrentProject({ onOpenSettings }) {
   const [step, setStep] = useState("input");
   const [fields, setFields] = useState({ hook: "", tone: "", audience: "", assets: [] });
   const [selHook, setSelHook] = useState(null);
@@ -676,6 +658,11 @@ function CurrentProject() {
 
           {/* Main content */}
           <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+              <OutlineBtn onClick={onOpenSettings}>
+                <EditIcon /> Master Prompts
+              </OutlineBtn>
+            </div>
 
             {/* INPUT */}
             <div id="section-input">
@@ -1303,7 +1290,7 @@ export default function Studio() {
       `}</style>
 
       {/* Sidebar */}
-      <Sidebar tab={tab} setTab={setTab} open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenSettings={() => setSettingsOpen(true)} />
+      <Sidebar tab={tab} setTab={setTab} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Settings Modal */}
       {settingsOpen && <MasterPromptsModal onClose={() => setSettingsOpen(false)} />}
@@ -1348,7 +1335,7 @@ export default function Studio() {
 
         {/* Page content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {tab === "current" ? <CurrentProject /> : tab === "imageGen" ? <ImageGenerations /> : <PastProjects />}
+          {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : <PastProjects />}
         </div>
       </div>
     </div>
