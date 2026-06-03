@@ -334,7 +334,7 @@ function StepBar({ currentStep }) {
 function PageNav({ visibleSteps }) {
   const scrollTo = (key) => document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
-    <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 120, height: "fit-content", alignSelf: "start" }}>
+    <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 32, height: "fit-content", alignSelf: "start" }}>
       <p style={{
         fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
         color: "var(--text-muted)", marginBottom: 10, fontFamily: "var(--font-mono)", padding: "0 8px",
@@ -497,11 +497,11 @@ function CurrentProject({ onOpenSettings }) {
   const [stepLoading, setStepLoading] = useState(null);
   const [editLoading, setEditLoading] = useState({});
   const fileRef = useRef(null);
-  const bottomRef = useRef(null);
+  const bottomRef = useRef(null); // kept for compatibility
 
   const curIdx = STEP_ORDER.indexOf(step);
   const visibleSteps = STEP_ORDER.slice(0, curIdx + 1);
-  const scrollBottom = () => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  const scrollToSection = (sectionId) => setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 
   const handleGenerateHooks = async () => {
     try {
@@ -517,7 +517,7 @@ function CurrentProject({ onOpenSettings }) {
       setProjectId(data.projectId);
       await sim(1000);
       setStep("hooks");
-      scrollBottom();
+      scrollToSection("section-hooks");
     } catch (error) {
       console.error(error);
     } finally {
@@ -538,12 +538,35 @@ function CurrentProject({ onOpenSettings }) {
       await sim(1200);
       setScript(data.script);
       setStep("script");
-      scrollBottom();
+      scrollToSection("section-script");
     } catch (error) {
       console.error(error);
     } finally {
       setLoadingScript(false);
     }
+  };
+
+  const autoGenerateKfImages = async (kfList) => {
+    const references = fields.assets.length > 0 ? [fields.assets[0].dataUrl] : [];
+    // fire off all generations concurrently
+    kfList.forEach((kf, idx) => {
+      (async () => {
+        try {
+          setKeyframes((prev) => prev.map((k, i) => i === idx ? { ...k, isGenerating: true } : k));
+          const res = await fetch(`${API_BASE}/api/generate-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "black-forest-labs/FLUX.1-schnell", prompt: kf.text, references }),
+          });
+          if (!res.ok) throw new Error("Image generation failed");
+          const data = await res.json();
+          setKeyframes((prev) => prev.map((k, i) => i === idx ? { ...k, image: data.image, isGenerating: false } : k));
+        } catch (err) {
+          console.error(`Keyframe ${idx} generation failed:`, err);
+          setKeyframes((prev) => prev.map((k, i) => i === idx ? { ...k, isGenerating: false } : k));
+        }
+      })();
+    });
   };
 
   const handleNext = async (from) => {
@@ -558,8 +581,12 @@ function CurrentProject({ onOpenSettings }) {
         if (!response.ok) throw new Error("Failed to generate keyframes");
         const data = await response.json();
         await sim(1100);
-        setKeyframes(data.keyframes.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null, isGenerating: false })));
+        const kfList = data.keyframes.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null, isGenerating: false }));
+        setKeyframes(kfList);
         setStep("keyframes");
+        scrollToSection("section-keyframes");
+        // auto-generate images for all keyframes
+        autoGenerateKfImages(kfList);
       } else if (from === "keyframes") {
         const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
           method: "POST",
@@ -571,6 +598,7 @@ function CurrentProject({ onOpenSettings }) {
         await sim(1100);
         setStoryboard(data.storyboard);
         setStep("storyboard");
+        scrollToSection("section-storyboard");
       } else if (from === "storyboard") {
         const response = await fetch(`${API_BASE}/api/generate-video-generation-hook-prompt`, {
           method: "POST",
@@ -582,6 +610,7 @@ function CurrentProject({ onOpenSettings }) {
         await sim(1100);
         setVHook(data.videoHookPrompt);
         setStep("videoHook");
+        scrollToSection("section-videoHook");
       } else if (from === "videoHook") {
         const response = await fetch(`${API_BASE}/api/generate-video-speaking-part`, {
           method: "POST",
@@ -593,8 +622,8 @@ function CurrentProject({ onOpenSettings }) {
         await sim(1100);
         setVSpeak(data.videoSpeakingPrompt);
         setStep("videoSpeak");
+        scrollToSection("section-videoSpeak");
       }
-      scrollBottom();
     } catch (error) {
       console.error(error);
     } finally {
