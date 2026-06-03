@@ -71,15 +71,18 @@ export default function WebLLMChatPanel({ isCollapsed, onToggleCollapse }) {
 
   if (isCollapsed) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", borderLeft: "1px solid var(--border-color)", padding: "0 10px", background: "var(--bg-primary)" }}>
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border-color)", padding: "0 10px", background: "var(--bg-primary)" }}>
         <button 
           onClick={onToggleCollapse}
           style={{
-            background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)",
-            padding: "20px 10px", cursor: "pointer", color: "var(--text-secondary)", writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: 2
+            background: "var(--accent)", border: "none", borderRadius: "var(--radius-lg)",
+            padding: "24px 12px", cursor: "pointer", color: "#fff", writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: 2,
+            fontWeight: 800, fontSize: "1rem", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", transition: "transform 0.2s"
           }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
         >
-          OPEN AI CHAT
+          ◂ OPEN AI CHAT
         </button>
       </div>
     );
@@ -97,9 +100,18 @@ export default function WebLLMChatPanel({ isCollapsed, onToggleCollapse }) {
         <span style={{ fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>
           Cloud AI Chat (Groq)
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setShowSettings(!showSettings)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }} title="Settings">⚙️</button>
-          <button onClick={onToggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }} title="Collapse">→</button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button onClick={() => setShowSettings(!showSettings)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }} title="Settings">⚙️</button>
+          <button 
+            onClick={onToggleCollapse} 
+            style={{ 
+              background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.85rem", fontWeight: 700,
+              padding: "6px 12px", borderRadius: "var(--radius-sm)", display: "flex", alignItems: "center", gap: 4, boxShadow: "var(--shadow-sm)"
+            }} 
+            title="Collapse Chat"
+          >
+            Collapse ▸
+          </button>
         </div>
       </div>
 

@@ -1,5 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
+import { Responsive, WidthProvider } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 function SpinnerIcon({ size = 14 }) {
@@ -31,19 +36,48 @@ const LayersIcon = () => (
   </svg>
 );
 
-const RefreshIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-  </svg>
-);
-
 const FontsList = ["Inter", "Outfit", "Playfair Display", "Roboto", "Montserrat", "Lora", "Courier New"];
+
+// ── Reusable Card Component ───────────────────────────────────────────────────
+const CardWrapper = ({ id, title, icon, isExpanded, onToggle, children, contentStyle, headerExtra }) => {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", height: "100%", width: "100%",
+      borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
+      background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px",
+        borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)", 
+        cursor: "move", userSelect: "none"
+      }} className="drag-handle">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {icon}
+          <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+            {title}
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          {headerExtra}
+          <button 
+            onClick={onToggle}
+            onPointerDown={(e) => e.stopPropagation()} // Prevent drag when clicking button
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "1.2rem", fontWeight: 600, padding: "0 4px" }}
+            title={isExpanded ? "Minimize" : "Expand"}
+          >
+            {isExpanded ? "−" : "+"}
+          </button>
+        </div>
+      </div>
+      {isExpanded && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 20, ...contentStyle }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 export default function ImageGenerations() {
   // Preloaded Global Prompt
@@ -55,7 +89,7 @@ export default function ImageGenerations() {
   const [userPrompt, setUserPrompt] = useState("A hyper-realistic premium female mountaineer holding a steel thermos mug, sitting on Everest basecamp rocks, looking directly at the camera with extreme detail, background of massive snowy blue sky mountains.");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [generatingBg, setGeneratingBg] = useState(false);
-  const [baseSceneImg, setBaseSceneImg] = useState(null); // Generated base scene image base64
+  const [baseSceneImg, setBaseSceneImg] = useState(null); 
   
   // Reference Images State
   const [references, setReferences] = useState([]);
@@ -72,6 +106,45 @@ export default function ImageGenerations() {
   // Layout State
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
 
+  // Grid / Card Layout State
+  const defaultHeights = { global: 4, references: 7, scene: 9, layer2: 8, typography: 13, layer1: 12, layer3: 11 };
+  const [expandedCards, setExpandedCards] = useState({
+    global: true, references: true, scene: true, typography: true, layer1: true, layer2: true, layer3: true
+  });
+  
+  const defaultLayout = [
+    { i: 'global', x: 0, y: 0, w: 6, h: defaultHeights.global },
+    { i: 'references', x: 6, y: 0, w: 6, h: defaultHeights.references },
+    { i: 'scene', x: 0, y: defaultHeights.global, w: 6, h: defaultHeights.scene },
+    { i: 'layer2', x: 6, y: defaultHeights.references, w: 6, h: defaultHeights.layer2 },
+    { i: 'typography', x: 0, y: defaultHeights.global + defaultHeights.scene, w: 6, h: defaultHeights.typography },
+    { i: 'layer1', x: 6, y: defaultHeights.references + defaultHeights.layer2, w: 6, h: defaultHeights.layer1 },
+    { i: 'layer3', x: 0, y: 30, w: 12, h: defaultHeights.layer3 },
+  ];
+
+  const [layouts, setLayouts] = useState({ lg: defaultLayout });
+
+  const toggleCard = (id) => {
+    const isExpanding = !expandedCards[id];
+    setExpandedCards(prev => ({ ...prev, [id]: isExpanding }));
+
+    // Adjust height in layout automatically
+    setLayouts(prev => {
+      const currentLg = prev.lg || defaultLayout;
+      const newLg = currentLg.map(item => {
+        if (item.i === id) {
+          return { ...item, h: isExpanding ? defaultHeights[id] : 1 };
+        }
+        return item;
+      });
+      return { ...prev, lg: newLg };
+    });
+  };
+
+  const onLayoutChange = (layout, allLayouts) => {
+    setLayouts(allLayouts);
+  };
+
   // Text Layer State
   const [textLayers, setTextLayers] = useState([
     { id: 1, text: "Take", color: "#ffffff", font: "Outfit", size: 38 },
@@ -84,7 +157,7 @@ export default function ImageGenerations() {
     color: "#ffffff", font: "Outfit", size: 20
   });
   
-  const [selectedLayerId, setSelectedLayerId] = useState(null); // null = global, 1-4 = headline, 'sub' = subtext
+  const [selectedLayerId, setSelectedLayerId] = useState(null); 
 
   const [textX, setTextX] = useState(40);
   const [textY, setTextY] = useState(60);
@@ -113,13 +186,7 @@ export default function ImageGenerations() {
   const [dragInfo, setDragInfo] = useState({ isDragging: false, startX: 0, startY: 0, initTextX: 0, initTextY: 0 });
 
   const handlePointerDown = (e) => {
-    setDragInfo({
-      isDragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      initTextX: textX,
-      initTextY: textY
-    });
+    setDragInfo({ isDragging: true, startX: e.clientX, startY: e.clientY, initTextX: textX, initTextY: textY });
     e.target.setPointerCapture(e.pointerId);
   };
   const handlePointerMove = (e) => {
@@ -136,7 +203,6 @@ export default function ImageGenerations() {
     }
   };
 
-  // Dynamic Google Font Injection
   useEffect(() => {
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -145,49 +211,29 @@ export default function ImageGenerations() {
     return () => document.head.removeChild(link);
   }, []);
 
-  // Handle file uploads for references
   const handleReferenceUpload = (e) => {
     const files = Array.from(e.target.files);
     files.forEach(file => {
       const reader = new FileReader();
-      reader.onload = () => {
-        setReferences(prev => [...prev, { name: file.name, url: reader.result }]);
-      };
+      reader.onload = () => { setReferences(prev => [...prev, { name: file.name, url: reader.result }]); };
       reader.readAsDataURL(file);
     });
   };
 
-  const removeReference = (index) => {
-    setReferences(prev => prev.filter((_, i) => i !== index));
-  };
+  const removeReference = (index) => { setReferences(prev => prev.filter((_, i) => i !== index)); };
 
-  // Optimize Prompt using Backend API
   const handleOptimizePrompt = async () => {
     if (!userDirection.trim()) return;
     try {
       setIsOptimizing(true);
       const response = await fetch("/api/optimize-prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userDirection,
-          globalPrompt,
-          referencesCount: references.length
-        })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userDirection, globalPrompt, referencesCount: references.length })
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        const reason = data?.error || data?.details || `HTTP ${response.status}`;
-        throw new Error(reason);
-      }
-
-      if (data.optimizedPrompt) {
-        setUserPrompt(data.optimizedPrompt);
-      }
+      if (!response.ok) throw new Error(data?.error || data?.details || `HTTP ${response.status}`);
+      if (data.optimizedPrompt) setUserPrompt(data.optimizedPrompt);
     } catch (error) {
-      console.error("Optimize prompt error:", error);
       alert("Optimize Prompt Error: " + error.message);
     } finally {
       setIsOptimizing(false);
@@ -200,106 +246,62 @@ export default function ImageGenerations() {
     setActiveIframeUrl(`https://www.pexels.com/search/${encodeURIComponent(searchQuery)}/`);
   };
 
-  // Generate Base Background + Character using Gemini
   const handleGenerateBaseScene = async () => {
     try {
       setGeneratingBg(true);
-      // Combine prompt, assets descriptions, and the global prompt
       const finalPrompt = `${userPrompt}. Instructions for style and physics: ${globalPrompt}`;
-      
       const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          aspect_ratio: aspectRatio
-        })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: finalPrompt, aspect_ratio: aspectRatio })
       });
-
-      if (!response.ok) {
-        let errMsg = "Failed to generate image base scene.";
-        try {
-          const errData = await response.json();
-          if (errData && errData.detail) {
-            errMsg = errData.detail;
-          }
-        } catch (e) {}
-        throw new Error(errMsg);
-      }
-
+      if (!response.ok) throw new Error("Failed to generate image base scene.");
       const data = await response.json();
-      if (data.status === "success") {
-        setBaseSceneImg(data.image);
-      }
+      if (data.status === "success") setBaseSceneImg(data.image);
     } catch (error) {
-      console.error("Base scene generation error:", error);
       alert("Error: " + error.message);
     } finally {
       setGeneratingBg(false);
     }
   };
 
-  // Interactive Live Canvas Rendering helper
   const drawCanvas = (isFinal = false) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Set dimensions based on aspect ratio or loaded image
-    let width = 600;
-    let height = 600;
-    if (aspectRatio === "9:16") {
-      width = 450;
-      height = 800;
-    } else if (aspectRatio === "16:9") {
-      width = 800;
-      height = 450;
-    }
+    let width = 600, height = 600;
+    if (aspectRatio === "9:16") { width = 450; height = 800; }
+    else if (aspectRatio === "16:9") { width = 800; height = 450; }
 
     canvas.width = width;
     canvas.height = height;
 
-    // 1. Draw Base Scene Image or placeholder
     if (baseSceneImg) {
       const img = new Image();
       img.src = baseSceneImg;
       img.onload = () => {
         ctx.drawImage(img, 0, 0, width, height);
         drawTextOverlay(ctx, width, height);
-        if (isFinal) {
-          setFinalImage(canvas.toDataURL("image/png"));
-        }
+        if (isFinal) setFinalImage(canvas.toDataURL("image/png"));
       };
     } else {
-      // Checkered blank pattern placeholder
-      ctx.fillStyle = "#1e1e1e";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "14px Inter";
-      ctx.textAlign = "center";
-      ctx.fillText("Base Scene Layer Placeholder (Generate scene or overlay on transparent text)", width / 2, height / 2);
+      ctx.fillStyle = "#1e1e1e"; ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff"; ctx.font = "14px Inter"; ctx.textAlign = "center";
+      ctx.fillText("Base Scene Layer Placeholder", width / 2, height / 2);
       drawTextOverlay(ctx, width, height);
     }
   };
 
   const drawTextOverlay = (ctx, w, h) => {
-    ctx.textBaseline = "top";
-    ctx.textAlign = "left";
-
+    ctx.textBaseline = "top"; ctx.textAlign = "left";
     let currentY = textY;
     
     textLayers.filter(l => l.text.trim() !== "").forEach(line => {
       ctx.font = `800 ${line.size}px "${line.font}", sans-serif`;
       ctx.fillStyle = line.color;
-      
-      ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetX = 1;
-      ctx.shadowOffsetY = 1;
-
+      ctx.shadowColor = "rgba(0, 0, 0, 0.6)"; ctx.shadowBlur = 6; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
       ctx.fillText(line.text, textX, currentY);
-      
       ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
       currentY += line.size * lineHeight;
     });
@@ -314,41 +316,27 @@ export default function ImageGenerations() {
     if (subTextLayer.text.trim() !== "") {
       ctx.font = `600 ${subTextLayer.size}px "${subTextLayer.font}", sans-serif`;
       ctx.fillStyle = subTextLayer.color;
-      ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; 
-      ctx.shadowBlur = 4; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
-
+      ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; ctx.shadowBlur = 4; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
       const subLines = subTextLayer.text.split("\n");
       subLines.forEach(subLine => {
         ctx.fillText(subLine, textX, currentY);
         currentY += subTextLayer.size * 1.3;
       });
-      
       ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     }
   };
 
-  // Re-render preview canvas whenever overlay parameters change
-  useEffect(() => {
-    drawCanvas();
-  }, [baseSceneImg, aspectRatio, textLayers, subTextLayer, textX, textY, lineHeight]);
+  useEffect(() => { drawCanvas(); }, [baseSceneImg, aspectRatio, textLayers, subTextLayer, textX, textY, lineHeight]);
 
-  // Final Merge Action
   const handleFinalMerge = async () => {
     setMerging(true);
-    // Draw canvas fully and output base64
-    setTimeout(() => {
-      drawCanvas(true);
-      setMerging(false);
-    }, 800);
+    setTimeout(() => { drawCanvas(true); setMerging(false); }, 800);
   };
 
-  // Trigger high-res creative download
   const handleDownload = () => {
     if (!finalImage) return;
     const link = document.createElement("a");
-    link.download = `creative_generation_${Date.now()}.png`;
-    link.href = finalImage;
-    link.click();
+    link.download = `creative_generation_${Date.now()}.png`; link.href = finalImage; link.click();
   };
 
   const handleDownloadText = () => {
@@ -356,61 +344,42 @@ export default function ImageGenerations() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
-    let width = 600;
-    let height = 600;
+    let width = 600, height = 600;
     if (aspectRatio === "9:16") { width = 450; height = 800; }
     else if (aspectRatio === "16:9") { width = 800; height = 450; }
-    
-    canvas.width = width;
-    canvas.height = height;
-    ctx.clearRect(0, 0, width, height); // Transparent
+    canvas.width = width; canvas.height = height; ctx.clearRect(0, 0, width, height); 
     drawTextOverlay(ctx, width, height);
-    
-    const link = document.createElement("a");
-    link.download = `typography_overlay_${Date.now()}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    const link = document.createElement("a"); link.download = `typography_overlay_${Date.now()}.png`; link.href = canvas.toDataURL("image/png"); link.click();
   };
 
   return (
-    <main style={{ maxWidth: "var(--max-width, 1400px)", margin: "0 auto", padding: "32px 24px 80px" }}>
+    <main style={{ maxWidth: "var(--max-width, 1600px)", margin: "0 auto", padding: "32px 24px 80px" }}>
       {/* Title Header */}
       <div style={{ marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Image Generations</h1>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Image Generations Workspace</h1>
           <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginTop: 4 }}>
-            Generate hyper-realistic marketing assets preloaded with consistency directives and custom typography elements.
+            Drag and drop cards to customize your layout. Expand or minimize panels to save space.
           </p>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <span style={{
-            fontSize: "0.75rem", fontWeight: 700, fontFamily: "var(--font-mono)",
-            background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-            color: "var(--text-secondary)", padding: "5px 12px", borderRadius: "var(--radius-md)",
-            display: "flex", alignItems: "center", gap: 6
-          }}>
-            Model: grok-imagine-image-quality
-          </span>
         </div>
       </div>
 
       {/* Solo Pexels Image Search */}
-      <div style={{ marginBottom: 24, background: "var(--bg-tertiary)", padding: 20, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" }}>
+      <div style={{ marginBottom: 32, background: "var(--bg-tertiary)", padding: 20, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" }}>
         <h3 style={{ fontSize: "1rem", marginBottom: 12, color: "var(--text-primary)" }}>Find Reference Images (Pexels)</h3>
-        <form onSubmit={handleSearchImages} style={{ display: "flex", gap: 8, marginBottom: activeIframeUrl ? 16 : 0 }}>
+        <form onSubmit={handleSearchImages} style={{ display: "flex", gap: 12, marginBottom: activeIframeUrl ? 16 : 0 }}>
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search Pexels for references..."
-            style={{ ...inputStyle, flex: 1, padding: "10px 14px", fontSize: "0.9rem" }}
+            style={{ ...inputStyle, flex: 1, padding: "12px 16px", fontSize: "1rem" }}
           />
           <button
             type="submit"
             disabled={!searchQuery.trim()}
             style={{
               background: "var(--accent)", color: "#fff", border: "none", 
-              borderRadius: "var(--radius-md)", padding: "0 24px", fontSize: "0.9rem", fontWeight: 600, cursor: "pointer"
+              borderRadius: "var(--radius-md)", padding: "0 32px", fontSize: "1rem", fontWeight: 600, cursor: "pointer"
             }}
           >
             Search
@@ -424,492 +393,202 @@ export default function ImageGenerations() {
             </div>
             <iframe 
               src={activeIframeUrl} 
-              style={{ width: "100%", height: 350, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }}
+              style={{ width: "100%", height: 400, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }}
               title="Pexels Image Search"
             />
           </div>
         )}
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div style={{ display: "flex", gap: 24, alignItems: "stretch", minHeight: "calc(100vh - 200px)" }} className="fade-in">
+      {/* MAIN CONTENT AREA WITH CHAT */}
+      <div style={{ display: "flex", gap: 32, alignItems: "stretch", minHeight: "calc(100vh - 200px)" }} className="fade-in">
         
         {/* MAIN WORKSPACE WRAPPER (Shrinks when chat opens) */}
-        <div style={{ flex: 1, display: "flex", gap: 24, minWidth: 0 }}>
-          
-          {/* LEFT COLUMN: SCROLLABLE CONTROLS */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 24, overflowY: "auto", paddingRight: 8, maxHeight: "calc(100vh - 200px)" }}>
-            
-            {/* Global Style Prompt Config */}
-            <div style={{
-              borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-              background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-            }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "12px 20px",
-                borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-              }}>
-                <SparklesIcon />
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                  Global Prompts (Character & Physics Directives)
-                </span>
-              </div>
-              <div style={{ padding: 20 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <ResponsiveGridLayout 
+            className="layout"
+            layouts={layouts}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+            rowHeight={40}
+            onLayoutChange={onLayoutChange}
+            draggableHandle=".drag-handle"
+            margin={[24, 24]}
+          >
+            {/* Global Prompts */}
+            <div key="global">
+              <CardWrapper 
+                id="global" title="Global Prompts" icon={<SparklesIcon />}
+                isExpanded={expandedCards.global} onToggle={() => toggleCard("global")}
+              >
                 <textarea
-                  value={globalPrompt}
-                  onChange={(e) => setGlobalPrompt(e.target.value)}
-                  style={{
-                    width: "100%", height: 75, border: "1px solid var(--border-color)",
-                    borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.85rem",
-                    color: "var(--text-primary)", background: "var(--bg-secondary)", resize: "none",
-                    fontFamily: "var(--font-mono)", lineHeight: 1.5
-                  }}
-                  placeholder="Directives to maintain hyper-realism, consistent styling, realistic physics, etc."
+                  value={globalPrompt} onChange={(e) => setGlobalPrompt(e.target.value)}
+                  style={{ width: "100%", height: "100%", minHeight: 80, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.85rem", color: "var(--text-primary)", background: "var(--bg-secondary)", resize: "none", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}
                 />
-              </div>
+              </CardWrapper>
             </div>
 
-            {/* Reference Image Attachments */}
-            <div style={{
-              borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-              background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-            }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "12px 20px",
-                borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-              }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                  Reference Assets & Characters
-                </span>
-              </div>
-              <div style={{ padding: 20 }}>
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: "1.5px dashed var(--border-color)", borderRadius: "var(--radius-md)",
-                    padding: "24px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s"
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.background = "var(--bg-secondary)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "transparent"; }}
-                >
+            {/* References */}
+            <div key="references">
+              <CardWrapper 
+                id="references" title="Reference Assets & Characters" icon={<span style={{fontSize:'12px'}}>📁</span>}
+                isExpanded={expandedCards.references} onToggle={() => toggleCard("references")}
+              >
+                <div onClick={() => fileInputRef.current?.click()} style={{ border: "1.5px dashed var(--border-color)", borderRadius: "var(--radius-md)", padding: "20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.875rem" }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                    </svg>
-                    <span>Upload Subject, Character or Style References</span>
-                    <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>Images will inform character consistency</span>
+                    <span>Upload References</span>
                   </div>
                 </div>
                 <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={handleReferenceUpload} />
-                
                 {references.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
                     {references.map((ref, idx) => (
                       <div key={idx} style={{ position: "relative", width: 64, height: 64, borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", overflow: "hidden" }}>
                         <img src={ref.url} alt={ref.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        <button 
-                          onClick={() => removeReference(idx)}
-                          style={{
-                            position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%",
-                            width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff"
-                          }}
-                        >
-                          ×
-                        </button>
+                        <button onClick={() => removeReference(idx)} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff" }}>×</button>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
+              </CardWrapper>
             </div>
 
-            {/* Scene and Subject Generation Inputs */}
-            <div style={{
-              borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-              background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-            }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "12px 20px",
-                borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-              }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                  Scene & Subject Generation Setup (Base Layer)
-                </span>
-              </div>
-              <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ padding: 16, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", marginBottom: 4 }}>
-                  <label style={labelStyle}>Quick User Direction (Auto-Optimizer)</label>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <input
-                      value={userDirection}
-                      onChange={(e) => setUserDirection(e.target.value)}
-                      style={{ ...inputStyle, flex: 1 }}
-                      placeholder="E.g., A futuristic robot holding a glowing orb"
-                    />
-                    <button
-                      onClick={handleOptimizePrompt}
-                      disabled={isOptimizing || !userDirection.trim()}
-                      style={{
-                        background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)",
-                        padding: "0 16px", fontSize: "0.85rem", fontWeight: 600, cursor: isOptimizing ? "not-allowed" : "pointer",
-                        display: "flex", alignItems: "center", gap: 6, opacity: isOptimizing ? 0.7 : 1
-                      }}
-                    >
-                      {isOptimizing ? <SpinnerIcon /> : <SparklesIcon />} Optimize
-                    </button>
+            {/* Scene Generation Setup */}
+            <div key="scene">
+              <CardWrapper 
+                id="scene" title="Scene Generation Setup" icon={<SparklesIcon />}
+                isExpanded={expandedCards.scene} onToggle={() => toggleCard("scene")}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ padding: 12, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
+                    <label style={labelStyle}>Quick Auto-Optimizer</label>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <input value={userDirection} onChange={(e) => setUserDirection(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                      <button onClick={handleOptimizePrompt} disabled={isOptimizing || !userDirection.trim()} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "0 16px", fontWeight: 600, cursor: "pointer", opacity: isOptimizing ? 0.7 : 1 }}>Optimize</button>
+                    </div>
                   </div>
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
-                    This will generate an optimized prompt below, factoring in your global prompt and references.
-                  </p>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Subject & Scene Prompt</label>
-                  <textarea
-                    value={userPrompt}
-                    onChange={(e) => setUserPrompt(e.target.value)}
-                    style={{
-                      width: "100%", height: 90, border: "1px solid var(--border-color)",
-                      borderRadius: "var(--radius-md)", padding: "10px 14px", fontSize: "0.875rem",
-                      color: "var(--text-primary)", background: "var(--bg-primary)", resize: "none",
-                      fontFamily: "inherit", lineHeight: 1.5
-                    }}
-                    placeholder="Describe your primary character, clothing, pose, action, and detailed setting..."
-                  />
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                   <div>
-                    <label style={labelStyle}>Aspect Ratio</label>
-                    <select 
-                      value={aspectRatio} 
-                      onChange={(e) => setAspectRatio(e.target.value)}
-                      style={selectStyle}
-                    >
-                      <option value="1:1">1:1 Square (Reference style)</option>
-                      <option value="9:16">9:16 Vertical Reel</option>
-                      <option value="16:9">16:9 Landscape</option>
-                    </select>
+                    <label style={labelStyle}>Subject & Scene Prompt</label>
+                    <textarea value={userPrompt} onChange={(e) => setUserPrompt(e.target.value)} style={{ width: "100%", height: 70, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px", fontSize: "0.875rem", fontFamily: "inherit", resize: "none" }} />
                   </div>
-                  <div style={{ display: "flex", alignItems: "flex-end" }}>
-                    <button
-                      onClick={handleGenerateBaseScene}
-                      disabled={generatingBg || !userPrompt.trim()}
-                      style={{
-                        width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)",
-                        color: generatingBg ? "var(--text-muted)" : "#fff",
-                        border: "none", borderRadius: "var(--radius-md)", padding: "11px 20px",
-                        fontSize: "0.875rem", fontWeight: 600, cursor: generatingBg ? "not-allowed" : "pointer",
-                        fontFamily: "inherit", transition: "all 0.15s"
-                      }}
-                    >
-                      {generatingBg ? <><SpinnerIcon /> Generating Base Scene…</> : <><SparklesIcon /> Generate Base Scene</>}
+                  <div style={{ display: "flex", gap: 16 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>Aspect Ratio</label>
+                      <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} style={selectStyle}>
+                        <option value="1:1">1:1 Square</option>
+                        <option value="9:16">9:16 Vertical Reel</option>
+                        <option value="16:9">16:9 Landscape</option>
+                      </select>
+                    </div>
+                    <button onClick={handleGenerateBaseScene} disabled={generatingBg || !userPrompt.trim()} style={{ flex: 1, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", fontWeight: 600, cursor: "pointer" }}>
+                      {generatingBg ? "Generating..." : "Generate Scene"}
                     </button>
                   </div>
                 </div>
-              </div>
+              </CardWrapper>
             </div>
-            
-            {/* Layer 2: Generated Character & Scene Base Preview (Moved here) */}
-            <div style={{
-              borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-              background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-            }}>
-              <div style={{
-                display: "flex", alignItems: "center", justify: "space-between", padding: "12px 20px",
-                borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-              }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                  Layer 2: Character + Background Layer (Grok Imagine)
-                </span>
-              </div>
-              <div style={{ padding: 20, display: "flex", justifyContent: "center", background: "var(--bg-tertiary)", minHeight: 260, alignItems: "center" }}>
+
+            {/* Layer 2: Generated Character Base */}
+            <div key="layer2">
+              <CardWrapper 
+                id="layer2" title="Layer 2: Base Output" icon={<span style={{fontSize:'12px'}}>🖼️</span>}
+                isExpanded={expandedCards.layer2} onToggle={() => toggleCard("layer2")}
+                contentStyle={{ display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-tertiary)" }}
+              >
                 {baseSceneImg ? (
-                  <div style={{ position: "relative", maxWidth: "100%", maxHeight: 360, overflow: "hidden", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
-                    <img src={baseSceneImg} alt="Generated Background + Character Base" style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }} />
-                  </div>
+                  <img src={baseSceneImg} alt="Base" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }} />
                 ) : (
-                  <div style={{ textAlign: "center", color: "var(--text-muted)" }}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" style={{ marginBottom: 12, opacity: 0.5 }}>
-                      <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                    </svg>
-                    <p style={{ fontSize: "0.85rem", fontWeight: 500 }}>No base scene generated yet.</p>
-                    <p style={{ fontSize: "0.75rem", marginTop: 4 }}>Configure the prompt above and click "Generate Base Scene".</p>
-                  </div>
+                  <div style={{ textAlign: "center", color: "var(--text-muted)" }}><p style={{ fontSize: "0.85rem", fontWeight: 500 }}>No base scene generated.</p></div>
                 )}
-              </div>
+              </CardWrapper>
             </div>
 
-          </div> {/* END LEFT SCROLLABLE COLUMN */}
-
-          {/* MIDDLE COLUMN: SIDE BY SIDE TEXT PNG FEATURE EDITOR AND DISPLAY */}
-          <div style={{ flex: 1.5, display: "flex", gap: 24, overflowY: "auto", maxHeight: "calc(100vh - 200px)", paddingRight: 8 }}>
-            
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 24 }}>
-              {/* Typography overlay settings */}
-              <div style={{
-                borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-                background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 10, padding: "12px 20px",
-                  borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-                }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                    Typography Wall Settings (Overlay Layer)
-                  </span>
-                </div>
-                <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-                  {/* Text Inputs */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Typography Overlay Settings */}
+            <div key="typography">
+              <CardWrapper 
+                id="typography" title="Typography Wall Settings" icon={<span style={{fontSize:'12px'}}>T</span>}
+                isExpanded={expandedCards.typography} onToggle={() => toggleCard("typography")}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     {textLayers.map((layer) => (
                       <div key={layer.id}>
-                        <label style={labelStyle}>Headline Line {layer.id}</label>
-                        <input 
-                          value={layer.text} 
-                          onChange={(e) => setTextLayers(prev => prev.map(l => l.id === layer.id ? { ...l, text: e.target.value } : l))} 
-                          style={inputStyle} 
-                        />
+                        <label style={labelStyle}>Line {layer.id}</label>
+                        <input value={layer.text} onChange={(e) => setTextLayers(prev => prev.map(l => l.id === layer.id ? { ...l, text: e.target.value } : l))} style={inputStyle} />
                       </div>
                     ))}
                   </div>
-
                   <div>
-                    <label style={labelStyle}>Sub-headline Paragraph</label>
-                    <textarea
-                      value={subTextLayer.text}
-                      onChange={(e) => setSubTextLayer(prev => ({ ...prev, text: e.target.value }))}
-                      style={{
-                        width: "100%", height: 75, border: "1px solid var(--border-color)",
-                        borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.875rem",
-                        color: "var(--text-primary)", background: "var(--bg-primary)", resize: "none",
-                        fontFamily: "inherit", lineHeight: 1.4
-                      }}
-                      placeholder="Additional promotional or features details..."
-                    />
+                    <label style={labelStyle}>Sub-headline</label>
+                    <textarea value={subTextLayer.text} onChange={(e) => setSubTextLayer(prev => ({ ...prev, text: e.target.value }))} style={{ width: "100%", height: 50, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px", fontSize: "0.875rem", fontFamily: "inherit", resize: "none" }} />
                   </div>
-
-                  <div style={{ borderTop: "1px solid var(--border-color)", margin: "16px 0", paddingTop: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-                        {selectedLayerId === null ? "Global Styling" : 
-                         selectedLayerId === 'sub' ? "Sub-headline" : 
-                         `Line ${selectedLayerId}`}
-                      </span>
-                      {selectedLayerId !== null && (
-                        <button onClick={() => setSelectedLayerId(null)} style={{ background: "transparent", border: "1px solid var(--border-color)", color: "var(--text-primary)", borderRadius: 4, padding: "4px 8px", fontSize: "0.75rem", cursor: "pointer" }}>
-                          Clear
-                        </button>
-                      )}
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>{selectedLayerId === null ? "Global Styling" : `Styling Selection`}</span>
+                      {selectedLayerId !== null && <button onClick={() => setSelectedLayerId(null)} style={{ background: "none", border: "1px solid var(--border-color)", cursor: "pointer", borderRadius: 4, padding: "2px 6px" }}>Clear</button>}
                     </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div>
-                        <label style={labelStyle}>Font</label>
-                        <select 
-                          value={selectedLayerId === null ? textLayers[0].font : selectedLayer.font} 
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (selectedLayerId === null) updateAllLayers("font", val);
-                            else updateSelectedLayer("font", val);
-                          }} 
-                          style={selectStyle}
-                        >
-                          {FontsList.map(font => <option key={font} value={font}>{font}</option>)}
-                        </select>
-                      </div>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={labelStyle}>Color</label>
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <input 
-                              type="color" 
-                              value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} 
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (selectedLayerId === null) updateAllLayers("color", val);
-                                else updateSelectedLayer("color", val);
-                              }} 
-                              style={{ width: 36, height: 36, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer", padding: 0 }} 
-                            />
-                            <input 
-                              value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} 
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (selectedLayerId === null) updateAllLayers("color", val);
-                                else updateSelectedLayer("color", val);
-                              }} 
-                              style={{ ...inputStyle, flex: 1, padding: "8px" }} 
-                            />
-                          </div>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={labelStyle}>Size</label>
-                          <input 
-                            type="number" 
-                            value={selectedLayerId === null ? textLayers[0].size : selectedLayer.size} 
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 20;
-                              if (selectedLayerId === null) updateAllLayers("size", val);
-                              else updateSelectedLayer("size", val);
-                            }} 
-                            style={inputStyle} 
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Global X Align (%)</label>
-                      <input type="number" value={textX} onChange={(e) => setTextX(parseInt(e.target.value) || 0)} style={inputStyle} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Global Y Align (%)</label>
-                      <input type="number" value={textY} onChange={(e) => setTextY(parseInt(e.target.value) || 0)} style={inputStyle} />
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <div style={{ flex: 1 }}><label style={labelStyle}>Font</label><select value={selectedLayerId === null ? textLayers[0].font : selectedLayer.font} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("font", val); else updateSelectedLayer("font", val); }} style={selectStyle}>{FontsList.map(font => <option key={font} value={font}>{font}</option>)}</select></div>
+                      <div style={{ flex: 1 }}><label style={labelStyle}>Color</label><input type="color" value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("color", val); else updateSelectedLayer("color", val); }} style={{ width: "100%", height: 38, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer" }} /></div>
+                      <div style={{ flex: 1 }}><label style={labelStyle}>Size</label><input type="number" value={selectedLayerId === null ? textLayers[0].size : selectedLayer.size} onChange={(e) => { const val = parseInt(e.target.value) || 20; if (selectedLayerId === null) updateAllLayers("size", val); else updateSelectedLayer("size", val); }} style={inputStyle} /></div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </CardWrapper>
             </div>
 
-            <div style={{ flex: 1.2, display: "flex", flexDirection: "column", gap: 24 }}>
-              {/* Layer 1: Live Text Wall PNG Preview */}
-              <div style={{
-                borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-                background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px",
-                  borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-                }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                    Layer 1: Text Wall Layer (Transparent PNG Model)
-                  </span>
-                  <button 
-                    onClick={handleDownloadText} 
-                    style={{
-                      fontSize: "0.75rem", fontWeight: 600, padding: "4px 10px", borderRadius: "var(--radius-sm)",
-                      background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s"
-                    }}
-                  >
-                    <DownloadIcon /> Text PNG
-                  </button>
-                </div>
-                <div style={{ padding: 20, display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px", position: "relative", overflow: "hidden", minHeight: 320 }}>
-                  <canvas ref={textCanvasRef} style={{ display: "none" }} />
-                  <div 
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerCancel={handlePointerUp}
-                    style={{
-                      position: "absolute", left: 0, top: 0,
-                      transform: `translate(${textX}px, ${textY}px)`,
-                      cursor: dragInfo.isDragging ? "grabbing" : "grab",
-                      textShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                      userSelect: "none", touchAction: "none"
-                    }}
-                  >
-                    <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
-                      {textLayers.map(layer => layer.text && (
-                        <div 
-                          key={layer.id}
-                          onClick={() => setSelectedLayerId(layer.id)}
-                          style={{ 
-                            color: layer.color, fontFamily: `"${layer.font}", sans-serif`, fontSize: layer.size * 0.7,
-                            cursor: "pointer", border: selectedLayerId === layer.id ? "1px dashed #666" : "1px solid transparent",
-                            padding: 2, margin: -2
-                          }}
-                        >
-                          {layer.text}
-                        </div>
-                      ))}
-                    </div>
-                    {textLayers.some(l => l.text.trim() !== "") && subTextLayer.text.trim() !== "" && (
-                      <div style={{ width: 30, height: 3, background: textLayers[1]?.color || "#2563eb", margin: "12px 0" }} />
-                    )}
-                    {subTextLayer.text && (
-                      <div 
-                        onClick={() => setSelectedLayerId('sub')}
-                        style={{ 
-                          color: subTextLayer.color, fontFamily: `"${subTextLayer.font}", sans-serif`,
-                          fontSize: subTextLayer.size * 0.8, fontWeight: 600, opacity: 0.9, whiteSpace: "pre-line", 
-                          lineHeight: 1.3, cursor: "pointer", border: selectedLayerId === 'sub' ? "1px dashed #666" : "1px solid transparent",
-                          padding: 2, margin: -2
-                        }}
-                      >
-                        {subTextLayer.text}
-                      </div>
-                    )}
+            {/* Layer 1: Text PNG */}
+            <div key="layer1">
+              <CardWrapper 
+                id="layer1" title="Layer 1: Text PNG Output" icon={<span style={{fontSize:'12px'}}>🔤</span>}
+                isExpanded={expandedCards.layer1} onToggle={() => toggleCard("layer1")}
+                headerExtra={<button onClick={handleDownloadText} style={{ fontSize: "0.75rem", fontWeight: 600, padding: "4px 8px", borderRadius: "var(--radius-sm)", background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", cursor: "pointer" }}><DownloadIcon /></button>}
+                contentStyle={{ display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px", position: "relative", overflow: "hidden" }}
+              >
+                <canvas ref={textCanvasRef} style={{ display: "none" }} />
+                <div onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} style={{ position: "absolute", left: 0, top: 0, transform: `translate(${textX}px, ${textY}px)`, cursor: dragInfo.isDragging ? "grabbing" : "grab", textShadow: "0 1px 3px rgba(0,0,0,0.2)", userSelect: "none", touchAction: "none" }}>
+                  <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
+                    {textLayers.map(layer => layer.text && <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} style={{ color: layer.color, fontFamily: `"${layer.font}", sans-serif`, fontSize: layer.size * 0.7, cursor: "pointer", border: selectedLayerId === layer.id ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2 }}>{layer.text}</div>)}
                   </div>
+                  {subTextLayer.text && <div onClick={() => setSelectedLayerId('sub')} style={{ color: subTextLayer.color, fontFamily: `"${subTextLayer.font}", sans-serif`, fontSize: subTextLayer.size * 0.8, fontWeight: 600, opacity: 0.9, whiteSpace: "pre-line", lineHeight: 1.3, cursor: "pointer", border: selectedLayerId === 'sub' ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2, marginTop: 16 }}>{subTextLayer.text}</div>}
                 </div>
-              </div>
+              </CardWrapper>
+            </div>
 
-              {/* Interactive Merger & Final Composer */}
-              <div style={{
-                borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)",
-                background: "var(--bg-primary)", boxShadow: "var(--shadow-sm)", overflow: "hidden"
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", justify: "space-between", padding: "12px 20px",
-                  borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)"
-                }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
-                    Layer 3: Canvas Merger & Final Ad
-                  </span>
-                  <button 
-                    onClick={handleFinalMerge} 
-                    style={{
-                      fontSize: "0.75rem", fontWeight: 600, padding: "4px 10px", borderRadius: "var(--radius-sm)",
-                      background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6
-                    }}
-                  >
-                    {merging ? <SpinnerIcon /> : <LayersIcon />} Compile
-                  </button>
-                </div>
-                <div style={{ padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            {/* Layer 3: Final Ad */}
+            <div key="layer3">
+              <CardWrapper 
+                id="layer3" title="Layer 3: Final Composited Ad" icon={<LayersIcon />}
+                isExpanded={expandedCards.layer3} onToggle={() => toggleCard("layer3")}
+                headerExtra={<button onClick={handleFinalMerge} style={{ fontSize: "0.75rem", fontWeight: 600, padding: "4px 8px", borderRadius: "var(--radius-sm)", background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer" }}>{merging ? "..." : "Compile"}</button>}
+              >
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, height: "100%" }}>
                   <canvas ref={canvasRef} style={{ display: "none" }} />
-                  
                   {finalImage ? (
-                    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
-                      <div style={{ position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-md)" }}>
-                        <img src={finalImage} alt="Final Ad Merger Creative" style={{ width: "100%", height: "auto", display: "block" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", height: "100%" }}>
+                      <div style={{ flex: 1, position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                        <img src={finalImage} alt="Final" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                       </div>
-                      <button
-                        onClick={handleDownload}
-                        style={{
-                          width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                          background: "#10b981", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "12px 20px",
-                          fontSize: "0.9rem", fontWeight: 700, cursor: "pointer", transition: "all 0.15s", boxShadow: "0 4px 6px -1px rgba(16, 185, 129, 0.2)"
-                        }}
-                      >
-                        <DownloadIcon /> Download High-Res
-                      </button>
+                      <button onClick={handleDownload} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "12px", fontSize: "0.9rem", fontWeight: 700, cursor: "pointer" }}><DownloadIcon /> Download</button>
                     </div>
                   ) : (
-                    <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "20px 0" }}>
-                      <p style={{ fontSize: "0.85rem", fontWeight: 500 }}>Merger not compiled.</p>
-                      <p style={{ fontSize: "0.75rem", marginTop: 4 }}>Click "Compile" above.</p>
-                    </div>
+                    <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "auto" }}><p style={{ fontSize: "0.85rem", fontWeight: 500 }}>Merger not compiled.</p></div>
                   )}
                 </div>
-              </div>
-
+              </CardWrapper>
             </div>
-          </div> {/* END MIDDLE COLUMN */}
 
-        </div> {/* END MAIN WORKSPACE WRAPPER */}
+          </ResponsiveGridLayout>
+        </div>
 
         {/* EXTRA RIGHT COLUMN: Cloud LLM Chat Panel (Collapsible) */}
         <div style={{ 
-          width: isChatCollapsed ? "40px" : "350px", 
+          width: isChatCollapsed ? "50px" : "400px", 
           transition: "width 0.3s ease", 
           position: "sticky", 
           top: 20, 
-          height: "calc(100vh - 120px)" 
+          height: "calc(100vh - 120px)",
+          zIndex: 50
         }}>
           <WebLLMChatPanel isCollapsed={isChatCollapsed} onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)} />
         </div>
@@ -920,39 +599,6 @@ export default function ImageGenerations() {
 }
 
 // ── Typography Box Style Helpers ────────────────────────────────────────────────
-const labelStyle = {
-  display: "block",
-  fontSize: "0.72rem",
-  fontWeight: 700,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  color: "var(--text-secondary)",
-  marginBottom: 6,
-  fontFamily: "var(--font-mono)",
-};
-
-const inputStyle = {
-  width: "100%",
-  border: "1px solid var(--border-color)",
-  borderRadius: "var(--radius-md)",
-  padding: "9px 12px",
-  fontSize: "0.875rem",
-  fontFamily: "inherit",
-  color: "var(--text-primary)",
-  background: "var(--bg-primary)",
-  transition: "border 0.15s, box-shadow 0.15s",
-  boxSizing: "border-box",
-};
-
-const selectStyle = {
-  width: "100%",
-  border: "1px solid var(--border-color)",
-  borderRadius: "var(--radius-md)",
-  padding: "9.5px 12px",
-  fontSize: "0.875rem",
-  fontFamily: "inherit",
-  color: "var(--text-primary)",
-  background: "var(--bg-primary)",
-  cursor: "pointer",
-  boxSizing: "border-box",
-};
+const labelStyle = { display: "block", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: 6, fontFamily: "var(--font-mono)" };
+const inputStyle = { width: "100%", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "9px 12px", fontSize: "0.875rem", fontFamily: "inherit", color: "var(--text-primary)", background: "var(--bg-primary)", boxSizing: "border-box" };
+const selectStyle = { width: "100%", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "9.5px 12px", fontSize: "0.875rem", fontFamily: "inherit", color: "var(--text-primary)", background: "var(--bg-primary)", cursor: "pointer", boxSizing: "border-box" };
