@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import ImageGenerations from "./ImageGenerations";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STEP_ORDER = ["input", "hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"];
@@ -503,7 +504,7 @@ function CurrentProject({ onOpenSettings }) {
   const handleGenerateHooks = async () => {
     try {
       setLoadingHooks(true);
-      const response = await fetch("/api/generate-hooks", {
+      const response = await fetch(`${API_BASE}/api/generate-hooks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -525,7 +526,7 @@ function CurrentProject({ onOpenSettings }) {
   const handleGenerateScript = async () => {
     try {
       setLoadingScript(true);
-      const response = await fetch("/api/generate-script", {
+      const response = await fetch(`${API_BASE}/api/generate-script`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -547,7 +548,7 @@ function CurrentProject({ onOpenSettings }) {
     try {
       setStepLoading(from);
       if (from === "script") {
-        const response = await fetch("/api/generate-keyframe-prompts", {
+        const response = await fetch(`${API_BASE}/api/generate-keyframe-prompts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -558,7 +559,7 @@ function CurrentProject({ onOpenSettings }) {
         setKeyframes(data.keyframes.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null })));
         setStep("keyframes");
       } else if (from === "keyframes") {
-        const response = await fetch("/api/generate-storyboard-prompt", {
+        const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, keyframes, script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -569,7 +570,7 @@ function CurrentProject({ onOpenSettings }) {
         setStoryboard(data.storyboard);
         setStep("storyboard");
       } else if (from === "storyboard") {
-        const response = await fetch("/api/generate-video-generation-hook-prompt", {
+        const response = await fetch(`${API_BASE}/api/generate-video-generation-hook-prompt`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, storyboard, keyframes, script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -580,7 +581,7 @@ function CurrentProject({ onOpenSettings }) {
         setVHook(data.videoHookPrompt);
         setStep("videoHook");
       } else if (from === "videoHook") {
-        const response = await fetch("/api/generate-video-speaking-part", {
+        const response = await fetch(`${API_BASE}/api/generate-video-speaking-part`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, script, storyboard, keyframes, videoHookPrompt: vHook, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
@@ -610,7 +611,7 @@ function CurrentProject({ onOpenSettings }) {
         videoHook: vHook,
         videoSpeak: vSpeak,
       };
-      const response = await fetch("/api/edit-section", {
+      const response = await fetch(`${API_BASE}/api/edit-section`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1017,7 +1018,7 @@ function PastProjects() {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const response = await fetch("/api/get-projects");
+        const response = await fetch(`${API_BASE}/api/get-projects`);
         const data = await response.json();
         setProjects(data.projects || []);
       } catch (err) {
@@ -1034,7 +1035,7 @@ function PastProjects() {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
     setDeletingId(id);
     try {
-      await fetch(`/api/delete-project/${id}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/delete-project/${id}`, { method: "DELETE" });
       setProjects((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
       console.error(err);
@@ -1174,7 +1175,7 @@ function MasterPromptsModal({ onClose }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch("/api/prompts")
+    fetch(`${API_BASE}/api/prompts`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -1196,7 +1197,7 @@ function MasterPromptsModal({ onClose }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch("/api/prompts", {
+      await fetch(`${API_BASE}/api/prompts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(prompts),

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 // ── Icons ──────────────────────────────────────────────────────────────────────
 function SpinnerIcon({ size = 14 }) {
   return (
@@ -139,7 +141,7 @@ export default function ImageGenerations() {
     if (!userDirection.trim()) return;
     try {
       setIsOptimizing(true);
-      const res = await fetch("/api/optimize-prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userDirection, globalPrompt, referencesCount: references.length }) });
+      const res = await fetch(`${API_BASE}/api/optimize-prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userDirection, globalPrompt, referencesCount: references.length }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data.optimizedPrompt) setUserPrompt(data.optimizedPrompt);
@@ -152,7 +154,7 @@ export default function ImageGenerations() {
   const handleGenerateBaseScene = async () => {
     try {
       setGeneratingBg(true);
-      const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: `${userPrompt}. Style: ${globalPrompt}`, aspect_ratio: aspectRatio }) });
+      const res = await fetch(`${API_BASE}/api/generate-image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: `${userPrompt}. Style: ${globalPrompt}`, aspect_ratio: aspectRatio }) });
       if (!res.ok) throw new Error("Failed to generate.");
       const data = await res.json();
       if (data.status === "success") setBaseSceneImg(data.image);
