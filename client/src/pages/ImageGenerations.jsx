@@ -79,7 +79,7 @@ export default function ImageGenerations() {
   );
   const [userPrompt, setUserPrompt] = useState("A hyper-realistic premium female mountaineer holding a steel thermos mug, sitting on Everest basecamp rocks, looking directly at the camera with extreme detail, background of massive snowy blue sky mountains.");
   const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [selectedModel, setSelectedModel] = useState("flux");
+  const [selectedModel, setSelectedModel] = useState("black-forest-labs/FLUX.1-schnell");
   const [generatingBg, setGeneratingBg] = useState(false);
   const [baseSceneImg, setBaseSceneImg] = useState(null);
   const [references, setReferences] = useState([]);
