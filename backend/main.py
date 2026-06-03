@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 # Load env variables
