@@ -1184,12 +1184,26 @@ function MasterPromptsModal({ onClose }) {
   const [prompts, setPrompts] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetch("/api/prompts")
-      .then((res) => res.json())
-      .then((data) => { setPrompts(data); setLoading(false); })
-      .catch((err) => { console.error(err); setLoading(false); });
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (data.detail) throw new Error(data.detail);
+        setPrompts(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch prompts:", err);
+        setError("Failed to load prompts from backend. Please ensure the backend is running and up-to-date.");
+        setLoading(false);
+      });
   }, []);
 
   const handleSave = async () => {
@@ -1233,23 +1247,31 @@ function MasterPromptsModal({ onClose }) {
           <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><CloseIcon /></button>
         </div>
         <div style={{ padding: 20, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 24 }}>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
-            Customize the instructions sent to the AI for each generation step. Variables and output formatting rules are automatically appended by the system.
-          </p>
-          {["hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"].map(key => (
-            <div key={key}>
-              <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
-              <textarea
-                value={prompts[key] || ""}
-                onChange={(e) => setPrompts({ ...prompts, [key]: e.target.value })}
-                style={{ ...inputStyle, minHeight: 120, resize: "vertical", fontFamily: "var(--font-mono)", fontSize: "0.8rem", lineHeight: 1.5 }}
-              />
+          {error ? (
+            <div style={{ color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", padding: "12px 16px", borderRadius: "var(--radius-md)", fontSize: "0.875rem" }}>
+              <strong>Error:</strong> {error}
             </div>
-          ))}
+          ) : (
+            <>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
+                Customize the instructions sent to the AI for each generation step. Variables and output formatting rules are automatically appended by the system.
+              </p>
+              {["hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"].map(key => (
+                <div key={key}>
+                  <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
+                  <textarea
+                    value={prompts[key] || ""}
+                    onChange={(e) => setPrompts({ ...prompts, [key]: e.target.value })}
+                    style={{ ...inputStyle, minHeight: 120, resize: "vertical", fontFamily: "var(--font-mono)", fontSize: "0.8rem", lineHeight: 1.5 }}
+                  />
+                </div>
+              ))}
+            </>
+          )}
         </div>
         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-secondary)" }}>
           <OutlineBtn onClick={onClose} disabled={saving}>Cancel</OutlineBtn>
-          <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Defaults"}</PrimaryBtn>
+          <PrimaryBtn onClick={handleSave} disabled={saving || !!error}>{saving ? "Saving..." : "Save Defaults"}</PrimaryBtn>
         </div>
       </div>
     </div>
