@@ -13,6 +13,28 @@ from dotenv import load_dotenv
 # Load env variables
 load_dotenv()
 
+PROMPTS_FILE = os.path.join(os.path.dirname(__file__), "prompts.json")
+
+DEFAULT_PROMPTS = {
+    "hooks": "Take in account the hook description, tone and audiece directed towards neatly, should not deviate from that.\nGIVE ME 10 ONE LINER MARKETING HOOKS.\nThe marketing hook is for advertising our website https://machineavatars.com/, make it accordingly, highlight the features of the avatar rather than a plain chatbot, the analytics dashboard and whatever you see fit and that which will make us standout from our competitors. Make it a one-liner that an entrepreneur can relate to.",
+    "script": "Requirements:\n- 10–15 seconds ONLY\n- extremely engaging opening\n- conversational, not corporate\n- cinematic pacing\n- social-media optimized\n- short punchy lines\n- emotionally intelligent\n- sound premium and futuristic\n- mention how the avatar improves customer interaction\n- mention analytics/business intelligence subtly\n- imply conversion growth and automation benefits\n- should sound natural when spoken aloud\n- avoid generic AI buzzwords\n- avoid long explanations\n- no scene directions\n- no markdown\n- no labels",
+    "keyframes": "Instructions:\n- Generate ONLY the keyframes absolutely necessary for temporal continuity\n- Avoid redundant frames\n- Prioritize cinematic transition anchors\n- Each keyframe should represent a major emotional or visual beat\n- Every frame must be optimized for Higgsfield image generation\n- Hyper realism is mandatory\n- Human physics must remain natural and believable\n- Preserve exact facial identity across all frames\n- Preserve hairstyle consistency\n- Preserve skin texture realism\n- Preserve wardrobe consistency\n- Preserve environment continuity\n- Preserve lighting continuity\n- Vertical 9:16 cinematic reel framing\n- Natural realistic body mechanics\n- Realistic gravity and cloth simulation behavior\n- Realistic cinematic lens behavior\n- Realistic skin light interaction\n- Realistic eye reflections\n- Subtle micro expressions\n- Cinematic commercial-grade composition\n- Real-world camera movement implication\n- Avoid exaggerated poses\n- Avoid animation/cartoon aesthetics entirely\n- Avoid over-stylized diffusion-art look\n- Assume final video will use frame interpolation between these keyframes",
+    "storyboard": "Instructions:\n- Generate ONLY the necessary storyboard moments\n- Avoid unnecessary scene changes\n- Prioritize emotional pacing and visual clarity\n- Every scene should help AI video interpolation remain stable\n- Preserve exact avatar identity throughout\n- Preserve wardrobe consistency\n- Preserve environment continuity\n- Preserve lighting consistency\n- Preserve realistic human body mechanics\n- Preserve realistic facial physics\n- Preserve realistic eye movement\n- Preserve realistic breathing and posture behavior\n- Avoid exaggerated poses\n- Avoid animation/cartoon aesthetics entirely\n- The reel should feel premium, modern, intelligent, and emotionally engaging\n- Focus heavily on realism and believable commercial cinematography",
+    "videoHook": "Instructions:\n- Hyper realistic human facial movement\n- Ultra realistic lip sync preparation\n- Realistic eye movement\n- Natural micro expressions\n- Realistic breathing\n- Realistic skin texture interaction with light\n- Realistic cloth movement physics\n- Preserve exact facial identity from provided assets\n- Preserve wardrobe consistency\n- Preserve lighting continuity\n- Preserve environmental continuity\n- Vertical 9:16 cinematic reel framing\n- Premium commercial cinematography\n- Realistic handheld or stabilized cinematic motion\n- Natural lens compression\n- Realistic depth of field\n- Social-media optimized pacing\n- Cinematic but believable human movement\n- No animation/cartoon aesthetics\n- No diffusion-art look\n- The reel must feel indistinguishable from real cinema footage\n\nThe hook should:\n- emotionally interrupt scrolling immediately\n- create curiosity within first 2 seconds\n- feel premium and futuristic\n- visually communicate intelligence and conversational AI\n- emphasize realistic AI avatar interaction\n- imply business growth and engagement benefits subtly",
+    "videoSpeak": "Requirements:\n- hyper realistic human facial animation\n- ultra realistic lip sync behavior\n- natural micro expressions\n- realistic blinking\n- subtle breathing movement\n- realistic jaw and cheek motion while speaking\n- cinematic vertical reel composition\n- realistic handheld or cinematic stabilized camera motion\n- natural lens compression\n- shallow depth of field\n- realistic lighting interaction on skin\n- cinematic color grading\n- smooth human movement\n- premium commercial aesthetic\n- social-media optimized framing\n- realistic eye focus shifts\n- preserve exact character identity from provided assets\n- preserve wardrobe consistency\n- preserve environment consistency\n- avoid animation/cartoon feel entirely\n- pacing optimized for 10–15 second reels\n- realistic body language matching speech rhythm\n- include camera movement suggestions\n- include emotional atmosphere\n- assume final render is intended for Instagram/TikTok premium ad quality"
+}
+
+def get_prompts():
+    if not os.path.exists(PROMPTS_FILE):
+        with open(PROMPTS_FILE, "w") as f:
+            json.dump(DEFAULT_PROMPTS, f, indent=2)
+        return DEFAULT_PROMPTS
+    try:
+        with open(PROMPTS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return DEFAULT_PROMPTS
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -280,6 +302,18 @@ def root():
 def health_check():
     return {"status": "healthy"}
 
+@app.get("/api/prompts")
+def get_prompts_api():
+    return get_prompts()
+
+@app.post("/api/prompts")
+def update_prompts_api(req: Dict[str, str]):
+    current = get_prompts()
+    current.update(req)
+    with open(PROMPTS_FILE, "w") as f:
+        json.dump(current, f, indent=2)
+    return {"status": "success"}
+
 
 @app.post("/api/generate-hooks")
 async def generate_hooks(req: GenerateHooksRequest):
@@ -287,11 +321,10 @@ async def generate_hooks(req: GenerateHooksRequest):
     project_id = await create_notion_page(req.hook, req.tone, req.audience)
     
     # 2. Run LLM to generate 10 hooks
+    master_prompts = get_prompts()
     prompt = f"""{req.hook} {req.tone}
 
-Take in account the hook description, tone and audiece directed towards neatly, should not deviate from that.
-GIVE ME 10 ONE LINER MARKETING HOOKS.
-The marketing hook is for advertising our website https://machineavatars.com/, make it accordingly, highlight the features of the avatar rather than a plain chatbot, the analytics dashboard and whatever you see fit and that which will make us standout from our competitors. Make it a one-liner that an entrepreneur can relate to.
+{master_prompts.get("hooks", DEFAULT_PROMPTS["hooks"])}
 
 Return output matching this JSON schema exactly:
 {{
@@ -315,6 +348,7 @@ Return output matching this JSON schema exactly:
 
 @app.post("/api/generate-script")
 async def generate_script(req: GenerateScriptRequest):
+    master_prompts = get_prompts()
     prompt = f"""You are an elite short-form cinematic ad scriptwriter creating high-retention AI SaaS reels for social media.
 
 Generate ONLY the speaking/dialogue part of a reel.
@@ -334,24 +368,7 @@ Tone:
 Audience:
 {req.audience}
 
-Requirements:
-- 10–15 seconds ONLY
-- extremely engaging opening
-- conversational, not corporate
-- cinematic pacing
-- social-media optimized
-- short punchy lines
-- emotionally intelligent
-- sound premium and futuristic
-- mention how the avatar improves customer interaction
-- mention analytics/business intelligence subtly
-- imply conversion growth and automation benefits
-- should sound natural when spoken aloud
-- avoid generic AI buzzwords
-- avoid long explanations
-- no scene directions
-- no markdown
-- no labels
+{master_prompts.get("script", DEFAULT_PROMPTS["script"])}
 
 Return ONLY the speaking script.
 Return output matching this JSON schema exactly:
@@ -375,6 +392,7 @@ Return output matching this JSON schema exactly:
 
 @app.post("/api/generate-keyframe-prompts")
 async def generate_keyframe_prompts(req: GenerateKeyframesRequest):
+    master_prompts = get_prompts()
     prompt = f"""You are a cinematic AI storyboard director generating only the absolutely necessary keyframes required for hyper-realistic Higgsfield AI video generation.
 
 Your task is to create ONLY the critical cinematic anchor frames needed for motion interpolation and scene consistency.
@@ -400,33 +418,7 @@ Tone:
 Audience:
 {req.audience}
 
-Instructions:
-- Generate ONLY the keyframes absolutely necessary for temporal continuity
-- Avoid redundant frames
-- Prioritize cinematic transition anchors
-- Each keyframe should represent a major emotional or visual beat
-- Every frame must be optimized for Higgsfield image generation
-- Hyper realism is mandatory
-- Human physics must remain natural and believable
-- Preserve exact facial identity across all frames
-- Preserve hairstyle consistency
-- Preserve skin texture realism
-- Preserve wardrobe consistency
-- Preserve environment continuity
-- Preserve lighting continuity
-- Vertical 9:16 cinematic reel framing
-- Natural realistic body mechanics
-- Realistic gravity and cloth simulation behavior
-- Realistic cinematic lens behavior
-- Realistic skin light interaction
-- Realistic eye reflections
-- Subtle micro expressions
-- Cinematic commercial-grade composition
-- Real-world camera movement implication
-- Avoid exaggerated poses
-- Avoid animation/cartoon aesthetics entirely
-- Avoid over-stylized diffusion-art look
-- Assume final video will use frame interpolation between these keyframes
+{master_prompts.get("keyframes", DEFAULT_PROMPTS["keyframes"])}
 
 For EACH keyframe include:
 - shot type
@@ -470,6 +462,7 @@ Return output matching this JSON schema exactly:
 async def generate_storyboard_prompt(req: GenerateStoryboardRequest):
     keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes])
     
+    master_prompts = get_prompts()
     prompt = f"""You are a cinematic AI commercial director creating a hyper-realistic vertical storyboard for Higgsfield AI video generation.
 
 The storyboard is for a premium advertising reel promoting:
@@ -503,23 +496,7 @@ Tone:
 Audience:
 {req.audience}
 
-Instructions:
-- Generate ONLY the necessary storyboard moments
-- Avoid unnecessary scene changes
-- Prioritize emotional pacing and visual clarity
-- Every scene should help AI video interpolation remain stable
-- Preserve exact avatar identity throughout
-- Preserve wardrobe consistency
-- Preserve environment continuity
-- Preserve lighting consistency
-- Preserve realistic human body mechanics
-- Preserve realistic facial physics
-- Preserve realistic eye movement
-- Preserve realistic breathing and posture behavior
-- Avoid exaggerated poses
-- Avoid animation/cartoon aesthetics entirely
-- The reel should feel premium, modern, intelligent, and emotionally engaging
-- Focus heavily on realism and believable commercial cinematography
+{master_prompts.get("storyboard", DEFAULT_PROMPTS["storyboard"])}
 
 Storyboard should include:
 - scene progression
@@ -575,6 +552,7 @@ Do not wrap in markdown.
 async def generate_video_generation_hook_prompt(req: GenerateVideoHookRequest):
     keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes])
     
+    master_prompts = get_prompts()
     prompt = f"""You are a cinematic AI commercial director generating hyper-realistic Higgsfield video prompts for the HOOK section of a premium vertical advertising reel.
 
 The reel is promoting:
@@ -615,28 +593,7 @@ Tone:
 Audience:
 {req.audience}
 
-Instructions:
-- Hyper realistic human facial movement
-- Ultra realistic lip sync preparation
-- Realistic eye movement
-- Natural micro expressions
-- Realistic breathing
-- Realistic skin texture interaction with light
-- Realistic cloth movement physics
-- Preserve exact facial identity from provided assets
-- Preserve wardrobe consistency
-- Preserve lighting continuity
-- Preserve environmental continuity
-- Vertical 9:16 cinematic reel framing
-- Premium commercial cinematography
-- Realistic handheld or stabilized cinematic motion
-- Natural lens compression
-- Realistic depth of field
-- Social-media optimized pacing
-- Cinematic but believable human movement
-- No animation/cartoon aesthetics
-- No diffusion-art look
-- The reel must feel indistinguishable from real cinema footage
+{master_prompts.get("videoHook", DEFAULT_PROMPTS["videoHook"])}
 
 For EACH segment include:
 - duration estimate
@@ -651,14 +608,6 @@ For EACH segment include:
 - realistic facial behavior
 - realistic body mechanics
 - environment continuity
-
-The hook should:
-- emotionally interrupt scrolling immediately
-- create curiosity within first 2 seconds
-- feel premium and futuristic
-- visually communicate intelligence and conversational AI
-- emphasize realistic AI avatar interaction
-- imply business growth and engagement benefits subtly
 
 Generate ONLY the segmented Higgsfield video hook part.
 
@@ -682,6 +631,7 @@ Return output matching this JSON schema exactly:
 
 @app.post("/api/generate-video-speaking-part")
 async def generate_video_speaking_part(req: GenerateVideoSpeakRequest):
+    master_prompts = get_prompts()
     prompt = f"""You are a cinematic AI video director creating hyper-realistic vertical short-form reels for Higgsfield AI video generation.
 
 Generate ONLY a cinematic video generation prompt for the speaking/dialogue section of the reel.
@@ -698,32 +648,7 @@ Context:
 Speaking Script:
 {req.script}
 
-Requirements:
-- hyper realistic human facial animation
-- ultra realistic lip sync behavior
-- natural micro expressions
-- realistic blinking
-- subtle breathing movement
-- realistic jaw and cheek motion while speaking
-- cinematic vertical reel composition
-- realistic handheld or cinematic stabilized camera motion
-- natural lens compression
-- shallow depth of field
-- realistic lighting interaction on skin
-- cinematic color grading
-- smooth human movement
-- premium commercial aesthetic
-- social-media optimized framing
-- realistic eye focus shifts
-- preserve exact character identity from provided assets
-- preserve wardrobe consistency
-- preserve environment consistency
-- avoid animation/cartoon feel entirely
-- pacing optimized for 10–15 second reels
-- realistic body language matching speech rhythm
-- include camera movement suggestions
-- include emotional atmosphere
-- assume final render is intended for Instagram/TikTok premium ad quality
+{master_prompts.get("videoSpeak", DEFAULT_PROMPTS["videoSpeak"])}
 
 The output should ONLY contain the Higgsfield cinematic video generation prompt.
 Return output matching this JSON schema exactly:

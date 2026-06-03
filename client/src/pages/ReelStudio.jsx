@@ -364,7 +364,7 @@ function PageNav({ visibleSteps }) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
-function Sidebar({ tab, setTab, open, onClose }) {
+function Sidebar({ tab, setTab, open, onClose, onOpenSettings }) {
   const navItems = [
     { key: "current", label: "Current Project", icon: <LayersIcon /> },
     { key: "past",    label: "Past Projects",   icon: <FolderIcon /> },
@@ -434,6 +434,24 @@ function Sidebar({ tab, setTab, open, onClose }) {
           );
         })}
       </nav>
+
+      {/* Settings Button */}
+      <div style={{ padding: "0 12px 16px" }}>
+        <button
+          onClick={() => { onClose?.(); onOpenSettings?.(); }}
+          style={{
+            width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 10px", borderRadius: "var(--radius-md)",
+            border: "none", cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
+            fontSize: "0.875rem", fontWeight: 500, background: "transparent", color: "var(--text-secondary)",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-secondary)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+        >
+          <span style={{ opacity: 0.6 }}><EditIcon /></span>
+          Master Prompts
+        </button>
+      </div>
 
       {/* User */}
       <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", alignItems: "center", gap: 10 }}>
@@ -1161,10 +1179,88 @@ const labelStyle = {
   fontFamily: "var(--font-mono)",
 };
 
+// ── Master Prompts Modal ────────────────────────────────────────────────────────
+function MasterPromptsModal({ onClose }) {
+  const [prompts, setPrompts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/prompts")
+      .then((res) => res.json())
+      .then((data) => { setPrompts(data); setLoading(false); })
+      .catch((err) => { console.error(err); setLoading(false); });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/prompts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(prompts),
+      });
+      onClose();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }} onClick={onClose} />
+        <div style={{ position: "relative", background: "var(--bg-primary)", padding: 40, borderRadius: "var(--radius-lg)" }}>
+          <SpinnerIcon size={24} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }} onClick={onClose} />
+      <div style={{
+        position: "relative", width: "90%", maxWidth: 640, maxHeight: "85vh",
+        background: "var(--bg-primary)", borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column",
+        border: "1px solid var(--border-color)", overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-secondary)" }}>
+          <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-primary)" }}>Edit Master Prompts</h3>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><CloseIcon /></button>
+        </div>
+        <div style={{ padding: 20, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 24 }}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
+            Customize the instructions sent to the AI for each generation step. Variables and output formatting rules are automatically appended by the system.
+          </p>
+          {["hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"].map(key => (
+            <div key={key}>
+              <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
+              <textarea
+                value={prompts[key] || ""}
+                onChange={(e) => setPrompts({ ...prompts, [key]: e.target.value })}
+                style={{ ...inputStyle, minHeight: 120, resize: "vertical", fontFamily: "var(--font-mono)", fontSize: "0.8rem", lineHeight: 1.5 }}
+              />
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-secondary)" }}>
+          <OutlineBtn onClick={onClose} disabled={saving}>Cancel</OutlineBtn>
+          <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Defaults"}</PrimaryBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App Root ────────────────────────────────────────────────────────────────────
 export default function Studio() {
   const [tab, setTab] = useState("current");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex" }}>
@@ -1185,7 +1281,10 @@ export default function Studio() {
       `}</style>
 
       {/* Sidebar */}
-      <Sidebar tab={tab} setTab={setTab} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar tab={tab} setTab={setTab} open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenSettings={() => setSettingsOpen(true)} />
+
+      {/* Settings Modal */}
+      {settingsOpen && <MasterPromptsModal onClose={() => setSettingsOpen(false)} />}
 
       {/* Main area */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
