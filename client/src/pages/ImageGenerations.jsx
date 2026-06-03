@@ -105,38 +105,17 @@ export default function ImageGenerations() {
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
 
   // Grid / Card Layout State
-  const defaultHeights = { global: 4, references: 7, scene: 9, layer2: 8, typography: 13, layer1: 12, layer3: 11 };
+  const defaultHeights = { global: 6, scene: 12, typography: 14, references: 8, layer2: 12, layer1: 12, layer3: 12 };
   const [expandedCards, setExpandedCards] = useState({
     global: true, references: true, scene: true, typography: true, layer1: true, layer2: true, layer3: true
   });
   
-  const defaultLayout = [
-    { i: 'global', x: 0, y: 0, w: 6, h: defaultHeights.global },
-    { i: 'references', x: 6, y: 0, w: 6, h: defaultHeights.references },
-    { i: 'scene', x: 0, y: defaultHeights.global, w: 6, h: defaultHeights.scene },
-    { i: 'layer2', x: 6, y: defaultHeights.references, w: 6, h: defaultHeights.layer2 },
-    { i: 'typography', x: 0, y: defaultHeights.global + defaultHeights.scene, w: 6, h: defaultHeights.typography },
-    { i: 'layer1', x: 6, y: defaultHeights.references + defaultHeights.layer2, w: 6, h: defaultHeights.layer1 },
-    { i: 'layer3', x: 0, y: 30, w: 12, h: defaultHeights.layer3 },
-  ];
-
-  const [layouts, setLayouts] = useState({ lg: defaultLayout });
+  // We use data-grid on the items directly to ensure they place correctly on all screen sizes on first load.
+  const [layouts, setLayouts] = useState(null);
 
   const toggleCard = (id) => {
     const isExpanding = !expandedCards[id];
     setExpandedCards(prev => ({ ...prev, [id]: isExpanding }));
-
-    // Adjust height in layout automatically
-    setLayouts(prev => {
-      const currentLg = prev.lg || defaultLayout;
-      const newLg = currentLg.map(item => {
-        if (item.i === id) {
-          return { ...item, h: isExpanding ? defaultHeights[id] : 1 };
-        }
-        return item;
-      });
-      return { ...prev, lg: newLg };
-    });
   };
 
   const onLayoutChange = (layout, allLayouts) => {
@@ -351,248 +330,304 @@ export default function ImageGenerations() {
   };
 
   return (
-    <main style={{ maxWidth: "var(--max-width, 1600px)", margin: "0 auto", padding: "32px 24px 80px" }}>
-      {/* Title Header */}
-      <div style={{ marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-        <div>
+    <div style={{ display: "flex", width: "100%", height: "100vh", overflow: "hidden" }}>
+      {/* SCROLLABLE MAIN AREA */}
+      <main style={{ flex: 1, overflowY: "auto", padding: "32px 32px 120px 32px", display: "flex", flexDirection: "column", minWidth: 0 }}>
+
+        {/* Title Header */}
+        <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Image Generations Workspace</h1>
           <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginTop: 4 }}>
-            Drag and drop cards to customize your layout. Expand or minimize panels to save space.
+            Drag cards by their header · Click <strong>−</strong> to minimize · Resize from the corner
           </p>
         </div>
-      </div>
 
-      {/* Solo Pexels Image Search */}
-      <div style={{ marginBottom: 32, background: "var(--bg-tertiary)", padding: 20, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: "1rem", marginBottom: 12, color: "var(--text-primary)" }}>Find Reference Images (Pexels)</h3>
-        <form onSubmit={handleSearchImages} style={{ display: "flex", gap: 12, marginBottom: activeIframeUrl ? 16 : 0 }}>
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search Pexels for references..."
-            style={{ ...inputStyle, flex: 1, padding: "12px 16px", fontSize: "1rem" }}
-          />
-          <button
-            type="submit"
-            disabled={!searchQuery.trim()}
-            style={{
-              background: "var(--accent)", color: "#fff", border: "none", 
-              borderRadius: "var(--radius-md)", padding: "0 32px", fontSize: "1rem", fontWeight: 600, cursor: "pointer"
-            }}
-          >
-            Search
-          </button>
-        </form>
-        {activeIframeUrl && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Search Results</span>
-              <a href={activeIframeUrl} target="_blank" rel="noreferrer" style={{ fontSize: "0.8rem", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>Open in New Tab ↗</a>
-            </div>
-            <iframe 
-              src={activeIframeUrl} 
-              style={{ width: "100%", height: 400, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }}
-              title="Pexels Image Search"
+        {/* Solo Pexels Image Search */}
+        <div style={{ marginBottom: 40, background: "var(--bg-tertiary)", padding: 20, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" }}>
+          <h3 style={{ fontSize: "1rem", marginBottom: 12, color: "var(--text-primary)" }}>Find Reference Images (Pexels)</h3>
+          <form onSubmit={handleSearchImages} style={{ display: "flex", gap: 12, marginBottom: activeIframeUrl ? 16 : 0 }}>
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Pexels for references..."
+              style={{ ...inputStyle, flex: 1, padding: "12px 16px", fontSize: "1rem" }}
             />
+            <button
+              type="submit"
+              disabled={!searchQuery.trim()}
+              style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "0 32px", fontSize: "1rem", fontWeight: 600, cursor: "pointer" }}
+            >
+              Search
+            </button>
+          </form>
+          {activeIframeUrl && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Search Results</span>
+                <a href={activeIframeUrl} target="_blank" rel="noreferrer" style={{ fontSize: "0.8rem", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>Open in New Tab ↗</a>
+              </div>
+              <iframe src={activeIframeUrl} style={{ width: "100%", height: 400, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)" }} title="Pexels Image Search" />
+            </div>
+          )}
+        </div>
+
+        {/* DRAGGABLE GRID WORKSPACE */}
+        <ResponsiveGridLayout
+          className="layout"
+          layouts={layouts || {}}
+          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+          rowHeight={40}
+          onLayoutChange={onLayoutChange}
+          draggableHandle=".drag-handle"
+          margin={[24, 24]}
+          useCSSTransforms={true}
+          preventCollision={false}
+          compactType="vertical"
+        >
+          {/* Global Prompts */}
+          <div key="global" data-grid={{ x: 0, y: 0, w: 7, h: expandedCards.global ? 8 : 1, minW: 3, minH: 1 }}>
+            <CardWrapper
+              id="global" title="Global Style Prompts (Character & Physics Directives)" icon={<SparklesIcon />}
+              isExpanded={expandedCards.global} onToggle={() => toggleCard("global")}
+            >
+              <textarea
+                value={globalPrompt}
+                onChange={(e) => setGlobalPrompt(e.target.value)}
+                style={{ width: "100%", height: "100%", minHeight: 160, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "14px 16px", fontSize: "0.9rem", color: "var(--text-primary)", background: "var(--bg-secondary)", resize: "none", fontFamily: "var(--font-mono)", lineHeight: 1.6 }}
+              />
+            </CardWrapper>
           </div>
-        )}
-      </div>
 
-      {/* MAIN CONTENT AREA WITH CHAT */}
-      <div style={{ display: "flex", gap: 32, alignItems: "stretch", minHeight: "calc(100vh - 200px)" }} className="fade-in">
-        
-        {/* MAIN WORKSPACE WRAPPER (Shrinks when chat opens) */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <ResponsiveGridLayout 
-            className="layout"
-            layouts={layouts}
-            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={40}
-            onLayoutChange={onLayoutChange}
-            draggableHandle=".drag-handle"
-            margin={[24, 24]}
-          >
-            {/* Global Prompts */}
-            <div key="global">
-              <CardWrapper 
-                id="global" title="Global Prompts" icon={<SparklesIcon />}
-                isExpanded={expandedCards.global} onToggle={() => toggleCard("global")}
+          {/* Reference Assets */}
+          <div key="references" data-grid={{ x: 7, y: 0, w: 5, h: expandedCards.references ? 8 : 1, minW: 3, minH: 1 }}>
+            <CardWrapper
+              id="references" title="Reference Assets & Characters" icon={<span style={{ fontSize: "12px" }}>📁</span>}
+              isExpanded={expandedCards.references} onToggle={() => toggleCard("references")}
+            >
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                style={{ border: "1.5px dashed var(--border-color)", borderRadius: "var(--radius-md)", padding: "28px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-secondary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
-                <textarea
-                  value={globalPrompt} onChange={(e) => setGlobalPrompt(e.target.value)}
-                  style={{ width: "100%", height: "100%", minHeight: 80, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.85rem", color: "var(--text-primary)", background: "var(--bg-secondary)", resize: "none", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}
-                />
-              </CardWrapper>
-            </div>
-
-            {/* References */}
-            <div key="references">
-              <CardWrapper 
-                id="references" title="Reference Assets & Characters" icon={<span style={{fontSize:'12px'}}>📁</span>}
-                isExpanded={expandedCards.references} onToggle={() => toggleCard("references")}
-              >
-                <div onClick={() => fileInputRef.current?.click()} style={{ border: "1.5px dashed var(--border-color)", borderRadius: "var(--radius-md)", padding: "20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.875rem" }}>
-                    <span>Upload References</span>
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.875rem" }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                  <span>Upload Character or Style References</span>
+                  <span style={{ fontSize: "0.75rem", opacity: 0.7 }}>Images help maintain character consistency</span>
                 </div>
-                <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={handleReferenceUpload} />
-                {references.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
-                    {references.map((ref, idx) => (
-                      <div key={idx} style={{ position: "relative", width: 64, height: 64, borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", overflow: "hidden" }}>
-                        <img src={ref.url} alt={ref.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        <button onClick={() => removeReference(idx)} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff" }}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardWrapper>
-            </div>
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={handleReferenceUpload} />
+              {references.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
+                  {references.map((ref, idx) => (
+                    <div key={idx} style={{ position: "relative", width: 72, height: 72, borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", overflow: "hidden" }}>
+                      <img src={ref.url} alt={ref.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <button onClick={() => removeReference(idx)} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: "12px" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardWrapper>
+          </div>
 
-            {/* Scene Generation Setup */}
-            <div key="scene">
-              <CardWrapper 
-                id="scene" title="Scene Generation Setup" icon={<SparklesIcon />}
-                isExpanded={expandedCards.scene} onToggle={() => toggleCard("scene")}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  <div style={{ padding: 12, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
-                    <label style={labelStyle}>Quick Auto-Optimizer</label>
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <input value={userDirection} onChange={(e) => setUserDirection(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-                      <button onClick={handleOptimizePrompt} disabled={isOptimizing || !userDirection.trim()} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "0 16px", fontWeight: 600, cursor: "pointer", opacity: isOptimizing ? 0.7 : 1 }}>Optimize</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Subject & Scene Prompt</label>
-                    <textarea value={userPrompt} onChange={(e) => setUserPrompt(e.target.value)} style={{ width: "100%", height: 70, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px", fontSize: "0.875rem", fontFamily: "inherit", resize: "none" }} />
-                  </div>
-                  <div style={{ display: "flex", gap: 16 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Aspect Ratio</label>
-                      <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} style={selectStyle}>
-                        <option value="1:1">1:1 Square</option>
-                        <option value="9:16">9:16 Vertical Reel</option>
-                        <option value="16:9">16:9 Landscape</option>
-                      </select>
-                    </div>
-                    <button onClick={handleGenerateBaseScene} disabled={generatingBg || !userPrompt.trim()} style={{ flex: 1, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", fontWeight: 600, cursor: "pointer" }}>
-                      {generatingBg ? "Generating..." : "Generate Scene"}
+          {/* Scene Generation Setup */}
+          <div key="scene" data-grid={{ x: 0, y: 8, w: 7, h: expandedCards.scene ? 14 : 1, minW: 4, minH: 1 }}>
+            <CardWrapper
+              id="scene" title="Scene & Subject Generation Setup (Base Layer)" icon={<SparklesIcon />}
+              isExpanded={expandedCards.scene} onToggle={() => toggleCard("scene")}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 20, height: "100%" }}>
+                <div style={{ padding: 16, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
+                  <label style={labelStyle}>Quick User Direction (Auto-Optimizer)</label>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <input value={userDirection} onChange={(e) => setUserDirection(e.target.value)} style={{ ...inputStyle, flex: 1 }} placeholder="E.g. A futuristic robot holding a glowing orb" />
+                    <button onClick={handleOptimizePrompt} disabled={isOptimizing || !userDirection.trim()} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "0 20px", fontWeight: 600, cursor: "pointer", opacity: isOptimizing ? 0.7 : 1 }}>
+                      {isOptimizing ? <SpinnerIcon /> : "Optimize"}
                     </button>
                   </div>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8 }}>Generates an optimized prompt below factoring in your global directives and references.</p>
                 </div>
-              </CardWrapper>
-            </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <label style={labelStyle}>Subject & Scene Prompt</label>
+                  <textarea
+                    value={userPrompt}
+                    onChange={(e) => setUserPrompt(e.target.value)}
+                    style={{ width: "100%", flex: 1, minHeight: 160, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "14px 16px", fontSize: "0.9rem", fontFamily: "inherit", resize: "none", lineHeight: 1.6, color: "var(--text-primary)", background: "var(--bg-primary)" }}
+                    placeholder="Describe your primary character, clothing, pose, action, and detailed setting..."
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Aspect Ratio</label>
+                    <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} style={selectStyle}>
+                      <option value="1:1">1:1 Square (Reference style)</option>
+                      <option value="9:16">9:16 Vertical Reel</option>
+                      <option value="16:9">16:9 Landscape</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={handleGenerateBaseScene}
+                    disabled={generatingBg || !userPrompt.trim()}
+                    style={{ flex: 1.2, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}
+                  >
+                    {generatingBg ? "Generating..." : "Generate Scene"}
+                  </button>
+                </div>
+              </div>
+            </CardWrapper>
+          </div>
 
-            {/* Layer 2: Generated Character Base */}
-            <div key="layer2">
-              <CardWrapper 
-                id="layer2" title="Layer 2: Base Output" icon={<span style={{fontSize:'12px'}}>🖼️</span>}
-                isExpanded={expandedCards.layer2} onToggle={() => toggleCard("layer2")}
-                contentStyle={{ display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-tertiary)" }}
-              >
-                {baseSceneImg ? (
-                  <img src={baseSceneImg} alt="Base" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }} />
-                ) : (
-                  <div style={{ textAlign: "center", color: "var(--text-muted)" }}><p style={{ fontSize: "0.85rem", fontWeight: 500 }}>No base scene generated.</p></div>
-                )}
-              </CardWrapper>
-            </div>
-
-            {/* Typography Overlay Settings */}
-            <div key="typography">
-              <CardWrapper 
-                id="typography" title="Typography Wall Settings" icon={<span style={{fontSize:'12px'}}>T</span>}
-                isExpanded={expandedCards.typography} onToggle={() => toggleCard("typography")}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    {textLayers.map((layer) => (
-                      <div key={layer.id}>
-                        <label style={labelStyle}>Line {layer.id}</label>
-                        <input value={layer.text} onChange={(e) => setTextLayers(prev => prev.map(l => l.id === layer.id ? { ...l, text: e.target.value } : l))} style={inputStyle} />
-                      </div>
-                    ))}
+          {/* Typography Wall Settings */}
+          <div key="typography" data-grid={{ x: 7, y: 8, w: 5, h: expandedCards.typography ? 14 : 1, minW: 3, minH: 1 }}>
+            <CardWrapper
+              id="typography" title="Typography Wall Settings (Overlay Layer)" icon={<span style={{ fontWeight: 900, fontSize: "14px" }}>T</span>}
+              isExpanded={expandedCards.typography} onToggle={() => toggleCard("typography")}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {textLayers.map((layer) => (
+                    <div key={layer.id}>
+                      <label style={labelStyle}>Headline Line {layer.id}</label>
+                      <input value={layer.text} onChange={(e) => setTextLayers(prev => prev.map(l => l.id === layer.id ? { ...l, text: e.target.value } : l))} style={inputStyle} />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <label style={labelStyle}>Sub-headline Paragraph</label>
+                  <textarea value={subTextLayer.text} onChange={(e) => setSubTextLayer(prev => ({ ...prev, text: e.target.value }))} style={{ width: "100%", height: 80, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px 12px", fontSize: "0.875rem", fontFamily: "inherit", resize: "none", lineHeight: 1.4 }} />
+                </div>
+                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>{selectedLayerId === null ? "Global Styling" : selectedLayerId === "sub" ? "Sub-headline" : `Line ${selectedLayerId}`}</span>
+                    {selectedLayerId !== null && <button onClick={() => setSelectedLayerId(null)} style={{ background: "none", border: "1px solid var(--border-color)", cursor: "pointer", borderRadius: 4, padding: "2px 8px", fontSize: "0.75rem" }}>Clear</button>}
                   </div>
                   <div>
-                    <label style={labelStyle}>Sub-headline</label>
-                    <textarea value={subTextLayer.text} onChange={(e) => setSubTextLayer(prev => ({ ...prev, text: e.target.value }))} style={{ width: "100%", height: 50, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: "10px", fontSize: "0.875rem", fontFamily: "inherit", resize: "none" }} />
+                    <label style={labelStyle}>Font</label>
+                    <select value={selectedLayerId === null ? textLayers[0].font : selectedLayer?.font || textLayers[0].font} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("font", val); else updateSelectedLayer("font", val); }} style={selectStyle}>
+                      {FontsList.map(font => <option key={font} value={font}>{font}</option>)}
+                    </select>
                   </div>
-                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>{selectedLayerId === null ? "Global Styling" : `Styling Selection`}</span>
-                      {selectedLayerId !== null && <button onClick={() => setSelectedLayerId(null)} style={{ background: "none", border: "1px solid var(--border-color)", cursor: "pointer", borderRadius: 4, padding: "2px 6px" }}>Clear</button>}
-                    </div>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <div style={{ flex: 1 }}><label style={labelStyle}>Font</label><select value={selectedLayerId === null ? textLayers[0].font : selectedLayer.font} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("font", val); else updateSelectedLayer("font", val); }} style={selectStyle}>{FontsList.map(font => <option key={font} value={font}>{font}</option>)}</select></div>
-                      <div style={{ flex: 1 }}><label style={labelStyle}>Color</label><input type="color" value={selectedLayerId === null ? textLayers[0].color : selectedLayer.color} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("color", val); else updateSelectedLayer("color", val); }} style={{ width: "100%", height: 38, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer" }} /></div>
-                      <div style={{ flex: 1 }}><label style={labelStyle}>Size</label><input type="number" value={selectedLayerId === null ? textLayers[0].size : selectedLayer.size} onChange={(e) => { const val = parseInt(e.target.value) || 20; if (selectedLayerId === null) updateAllLayers("size", val); else updateSelectedLayer("size", val); }} style={inputStyle} /></div>
-                    </div>
-                  </div>
-                </div>
-              </CardWrapper>
-            </div>
-
-            {/* Layer 1: Text PNG */}
-            <div key="layer1">
-              <CardWrapper 
-                id="layer1" title="Layer 1: Text PNG Output" icon={<span style={{fontSize:'12px'}}>🔤</span>}
-                isExpanded={expandedCards.layer1} onToggle={() => toggleCard("layer1")}
-                headerExtra={<button onClick={handleDownloadText} style={{ fontSize: "0.75rem", fontWeight: 600, padding: "4px 8px", borderRadius: "var(--radius-sm)", background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", cursor: "pointer" }}><DownloadIcon /></button>}
-                contentStyle={{ display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px", position: "relative", overflow: "hidden" }}
-              >
-                <canvas ref={textCanvasRef} style={{ display: "none" }} />
-                <div onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} style={{ position: "absolute", left: 0, top: 0, transform: `translate(${textX}px, ${textY}px)`, cursor: dragInfo.isDragging ? "grabbing" : "grab", textShadow: "0 1px 3px rgba(0,0,0,0.2)", userSelect: "none", touchAction: "none" }}>
-                  <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
-                    {textLayers.map(layer => layer.text && <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} style={{ color: layer.color, fontFamily: `"${layer.font}", sans-serif`, fontSize: layer.size * 0.7, cursor: "pointer", border: selectedLayerId === layer.id ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2 }}>{layer.text}</div>)}
-                  </div>
-                  {subTextLayer.text && <div onClick={() => setSelectedLayerId('sub')} style={{ color: subTextLayer.color, fontFamily: `"${subTextLayer.font}", sans-serif`, fontSize: subTextLayer.size * 0.8, fontWeight: 600, opacity: 0.9, whiteSpace: "pre-line", lineHeight: 1.3, cursor: "pointer", border: selectedLayerId === 'sub' ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2, marginTop: 16 }}>{subTextLayer.text}</div>}
-                </div>
-              </CardWrapper>
-            </div>
-
-            {/* Layer 3: Final Ad */}
-            <div key="layer3">
-              <CardWrapper 
-                id="layer3" title="Layer 3: Final Composited Ad" icon={<LayersIcon />}
-                isExpanded={expandedCards.layer3} onToggle={() => toggleCard("layer3")}
-                headerExtra={<button onClick={handleFinalMerge} style={{ fontSize: "0.75rem", fontWeight: 600, padding: "4px 8px", borderRadius: "var(--radius-sm)", background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer" }}>{merging ? "..." : "Compile"}</button>}
-              >
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, height: "100%" }}>
-                  <canvas ref={canvasRef} style={{ display: "none" }} />
-                  {finalImage ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", height: "100%" }}>
-                      <div style={{ flex: 1, position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", display: "flex", justifyContent: "center", alignItems: "center" }}>
-                        <img src={finalImage} alt="Final" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <div style={{ flex: 2 }}>
+                      <label style={labelStyle}>Color</label>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input type="color" value={selectedLayerId === null ? textLayers[0].color : selectedLayer?.color || "#fff"} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("color", val); else updateSelectedLayer("color", val); }} style={{ width: 38, height: 38, border: "1px solid var(--border-color)", borderRadius: 6, cursor: "pointer", padding: 2 }} />
+                        <input value={selectedLayerId === null ? textLayers[0].color : selectedLayer?.color || "#fff"} onChange={(e) => { const val = e.target.value; if (selectedLayerId === null) updateAllLayers("color", val); else updateSelectedLayer("color", val); }} style={{ ...inputStyle, flex: 1 }} />
                       </div>
-                      <button onClick={handleDownload} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "12px", fontSize: "0.9rem", fontWeight: 700, cursor: "pointer" }}><DownloadIcon /> Download</button>
                     </div>
-                  ) : (
-                    <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "auto" }}><p style={{ fontSize: "0.85rem", fontWeight: 500 }}>Merger not compiled.</p></div>
-                  )}
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>Size</label>
+                      <input type="number" value={selectedLayerId === null ? textLayers[0].size : selectedLayer?.size || 30} onChange={(e) => { const val = parseInt(e.target.value) || 20; if (selectedLayerId === null) updateAllLayers("size", val); else updateSelectedLayer("size", val); }} style={inputStyle} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>X Position</label>
+                      <input type="number" value={textX} onChange={(e) => setTextX(parseInt(e.target.value) || 0)} style={inputStyle} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>Y Position</label>
+                      <input type="number" value={textY} onChange={(e) => setTextY(parseInt(e.target.value) || 0)} style={inputStyle} />
+                    </div>
+                  </div>
                 </div>
-              </CardWrapper>
-            </div>
+              </div>
+            </CardWrapper>
+          </div>
 
-          </ResponsiveGridLayout>
-        </div>
+          {/* Layer 2: Base Output (OUTPUT — visible on scroll) */}
+          <div key="layer2" data-grid={{ x: 0, y: 22, w: 6, h: expandedCards.layer2 ? 13 : 1, minW: 3, minH: 1 }}>
+            <CardWrapper
+              id="layer2" title="Layer 2: Character + Background (Grok Imagine)" icon={<span style={{ fontSize: "12px" }}>🖼️</span>}
+              isExpanded={expandedCards.layer2} onToggle={() => toggleCard("layer2")}
+              contentStyle={{ display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-tertiary)", height: "100%" }}
+            >
+              {baseSceneImg ? (
+                <img src={baseSceneImg} alt="Base" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }} />
+              ) : (
+                <div style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" style={{ marginBottom: 12, opacity: 0.4 }}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                  <p style={{ fontSize: "0.85rem", fontWeight: 500 }}>No base scene generated yet.</p>
+                  <p style={{ fontSize: "0.75rem", marginTop: 4, opacity: 0.7 }}>Configure the prompt above and click Generate Scene.</p>
+                </div>
+              )}
+            </CardWrapper>
+          </div>
 
-        {/* EXTRA RIGHT COLUMN: Cloud LLM Chat Panel (Collapsible) */}
-        <div style={{ 
-          width: isChatCollapsed ? "50px" : "400px", 
-          transition: "width 0.3s ease", 
-          position: "sticky", 
-          top: 20, 
-          height: "calc(100vh - 120px)",
-          zIndex: 50
-        }}>
-          <WebLLMChatPanel isCollapsed={isChatCollapsed} onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)} />
-        </div>
+          {/* Layer 1: Text Wall PNG (OUTPUT — visible on scroll) */}
+          <div key="layer1" data-grid={{ x: 6, y: 22, w: 6, h: expandedCards.layer1 ? 13 : 1, minW: 3, minH: 1 }}>
+            <CardWrapper
+              id="layer1" title="Layer 1: Text Wall Layer (Transparent PNG)" icon={<span style={{ fontSize: "12px" }}>🔤</span>}
+              isExpanded={expandedCards.layer1} onToggle={() => toggleCard("layer1")}
+              headerExtra={<button onClick={handleDownloadText} style={{ fontSize: "0.75rem", fontWeight: 600, padding: "4px 10px", borderRadius: "var(--radius-sm)", background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><DownloadIcon /> Text PNG</button>}
+              contentStyle={{ display: "flex", justifyContent: "center", background: "#f0f0f1", backgroundImage: "radial-gradient(#dbdbdb 1px, transparent 0), radial-gradient(#dbdbdb 1px, transparent 0)", backgroundSize: "16px 16px", backgroundPosition: "0 0, 8px 8px", position: "relative", overflow: "hidden", height: "100%" }}
+            >
+              <canvas ref={textCanvasRef} style={{ display: "none" }} />
+              <div
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                style={{ position: "absolute", left: 0, top: 0, transform: `translate(${textX}px, ${textY}px)`, cursor: dragInfo.isDragging ? "grabbing" : "grab", textShadow: "0 1px 3px rgba(0,0,0,0.2)", userSelect: "none", touchAction: "none" }}
+              >
+                <div style={{ fontWeight: 900, lineHeight: lineHeight }}>
+                  {textLayers.map(layer => layer.text && (
+                    <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} style={{ color: layer.color, fontFamily: `"${layer.font}", sans-serif`, fontSize: layer.size * 0.7, cursor: "pointer", border: selectedLayerId === layer.id ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2 }}>{layer.text}</div>
+                  ))}
+                </div>
+                {subTextLayer.text && (
+                  <div onClick={() => setSelectedLayerId('sub')} style={{ color: subTextLayer.color, fontFamily: `"${subTextLayer.font}", sans-serif`, fontSize: subTextLayer.size * 0.8, fontWeight: 600, opacity: 0.9, whiteSpace: "pre-line", lineHeight: 1.3, cursor: "pointer", border: selectedLayerId === 'sub' ? "1px dashed #666" : "1px solid transparent", padding: 2, margin: -2, marginTop: 16 }}>{subTextLayer.text}</div>
+                )}
+              </div>
+            </CardWrapper>
+          </div>
 
-      </div>
-    </main>
+          {/* Layer 3: Final Composited Ad (OUTPUT — visible on scroll) */}
+          <div key="layer3" data-grid={{ x: 0, y: 35, w: 12, h: expandedCards.layer3 ? 14 : 1, minW: 6, minH: 1 }}>
+            <CardWrapper
+              id="layer3" title="Layer 3: Canvas Merger & Final Ad Composition" icon={<LayersIcon />}
+              isExpanded={expandedCards.layer3} onToggle={() => toggleCard("layer3")}
+              headerExtra={<button onClick={handleFinalMerge} style={{ fontSize: "0.85rem", fontWeight: 700, padding: "5px 14px", borderRadius: "var(--radius-sm)", background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>{merging ? "Compiling..." : "Compile Merger"}</button>}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, height: "100%" }}>
+                <canvas ref={canvasRef} style={{ display: "none" }} />
+                {finalImage ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", height: "100%" }}>
+                    <div style={{ flex: 1, position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                      <img src={finalImage} alt="Final Ad Creative" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    </div>
+                    <button onClick={handleDownload} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "14px", fontSize: "1rem", fontWeight: 700, cursor: "pointer" }}>
+                      <DownloadIcon /> Download High-Res Ad Creative
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: "center", color: "var(--text-muted)", margin: "auto" }}>
+                    <p style={{ fontSize: "0.85rem", fontWeight: 500 }}>Merger not compiled yet.</p>
+                    <p style={{ fontSize: "0.75rem", marginTop: 4, opacity: 0.7 }}>Click Compile Merger in the header to overlay all layers.</p>
+                  </div>
+                )}
+              </div>
+            </CardWrapper>
+          </div>
+
+        </ResponsiveGridLayout>
+      </main>
+
+      {/* CHAT PANEL — pinned to right edge, full viewport height, no gap */}
+      <aside style={{
+        width: isChatCollapsed ? "52px" : "400px",
+        transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        height: "100vh",
+        flexShrink: 0,
+        zIndex: 50,
+        borderLeft: "1px solid var(--border-color)",
+        background: "var(--bg-primary)",
+        overflow: "hidden"
+      }}>
+        <WebLLMChatPanel isCollapsed={isChatCollapsed} onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)} />
+      </aside>
+    </div>
   );
 }
 
