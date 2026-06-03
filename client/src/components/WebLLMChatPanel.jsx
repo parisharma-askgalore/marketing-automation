@@ -1,49 +1,38 @@
 import { useState, useRef, useEffect } from "react";
-import * as webllm from "@mlc-ai/web-llm";
 
-export default function WebLLMChatPanel() {
-  const [messages, setMessages] = useState([]);
+export default function WebLLMChatPanel({ isCollapsed, onToggleCollapse }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "Hello! I am your cloud-powered AI assistant (via Groq). How can I help you brainstorm prompts or refine ideas today?" }
+  ]);
   const [input, setInput] = useState("");
-  const [engine, setEngine] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [initProgress, setInitProgress] = useState("");
-  const [isReady, setIsReady] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("groq_api_key") || "");
+  const [showSettings, setShowSettings] = useState(!localStorage.getItem("groq_api_key"));
+  const [model, setModel] = useState("llama3-8b-8192");
   const messagesEndRef = useRef(null);
-
-  const selectedModel = "Llama-3.1-8B-Instruct-q4f32_1-MLC"; // Standard good model, free local
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const initEngine = async () => {
-    try {
-      setIsLoading(true);
-      setInitProgress("Initializing WebLLM Engine...");
-      
-      const initProgressCallback = (report) => {
-        setInitProgress(`Loading: ${Math.round(report.progress * 100)}% - ${report.text}`);
-      };
-
-      const newEngine = await webllm.CreateMLCEngine(
-        selectedModel,
-        { initProgressCallback }
-      );
-      
-      setEngine(newEngine);
-      setIsReady(true);
-      setInitProgress("");
-      setMessages([{ role: "assistant", content: "Hello! I am your local AI assistant running directly in your browser. How can I help you brainstorm prompts or refine ideas today?" }]);
-    } catch (err) {
-      console.error("Failed to init WebLLM:", err);
-      setInitProgress("Error initializing AI. Check console or try reloading.");
-    } finally {
-      setIsLoading(false);
+  const handleSaveSettings = () => {
+    if (apiKeyInput.trim()) {
+      setApiKey(apiKeyInput.trim());
+      localStorage.setItem("groq_api_key", apiKeyInput.trim());
+      setShowSettings(false);
     }
   };
 
+  const clearApiKey = () => {
+    setApiKey("");
+    setApiKeyInput("");
+    localStorage.removeItem("groq_api_key");
+    setShowSettings(true);
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || !engine) return;
+    if (!input.trim() || !apiKey) return;
     
     const userMsg = { role: "user", content: input.trim() };
     const updatedMessages = [...messages, userMsg];
@@ -52,69 +41,116 @@ export default function WebLLMChatPanel() {
     setIsLoading(true);
 
     try {
-      const chunks = await engine.chat.completions.create({
-        messages: updatedMessages,
-        stream: true,
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: updatedMessages.map(m => ({ role: m.role, content: m.content }))
+        })
       });
 
-      let reply = "";
-      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+      const data = await response.json();
 
-      for await (const chunk of chunks) {
-        reply += chunk.choices[0]?.delta?.content || "";
-        setMessages(prev => {
-          const newMsg = [...prev];
-          newMsg[newMsg.length - 1].content = reply;
-          return newMsg;
-        });
+      if (!response.ok) {
+        throw new Error(data.error?.message || "Failed to fetch from Groq API");
       }
+
+      const reply = data.choices[0].message.content;
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
       console.error("Chat error:", err);
-      setMessages(prev => [...prev, { role: "assistant", content: "An error occurred while generating the response." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.message}. Check your API key.` }]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  if (isCollapsed) {
+    return (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", borderLeft: "1px solid var(--border-color)", padding: "0 10px", background: "var(--bg-primary)" }}>
+        <button 
+          onClick={onToggleCollapse}
+          style={{
+            background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)",
+            padding: "20px 10px", cursor: "pointer", color: "var(--text-secondary)", writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: 2
+          }}
+        >
+          OPEN AI CHAT
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{
-      display: "flex", flexDirection: "column", height: "100%",
-      background: "var(--bg-primary)", borderRadius: "var(--radius-lg)",
-      border: "1px solid var(--border-color)", overflow: "hidden"
+      display: "flex", flexDirection: "column", height: "100%", width: 350,
+      background: "var(--bg-primary)", borderLeft: "1px solid var(--border-color)", overflow: "hidden"
     }}>
       <div style={{
         padding: "12px 20px", borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)",
         display: "flex", justifyContent: "space-between", alignItems: "center"
       }}>
         <span style={{ fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>
-          Local AI Chat (WebLLM)
+          Cloud AI Chat (Groq)
         </span>
-        <span style={{ fontSize: "0.7rem", color: isReady ? "#10b981" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: isReady ? "#10b981" : "var(--text-muted)" }} />
-          {isReady ? "Ready" : "Offline"}
-        </span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowSettings(!showSettings)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }} title="Settings">⚙️</button>
+          <button onClick={onToggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }} title="Collapse">→</button>
+        </div>
       </div>
 
-      {!isReady ? (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, textAlign: "center" }}>
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" color="var(--text-muted)" style={{ marginBottom: 16 }}>
-            <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
-          </svg>
-          <h3 style={{ fontSize: "1rem", marginBottom: 8, color: "var(--text-primary)" }}>Local AI Assistant</h3>
-          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 20 }}>
-            Run an AI model directly in your browser for absolute privacy. No API keys required. First run will download the model.
+      {showSettings ? (
+        <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
+          <h3 style={{ fontSize: "1rem", marginBottom: 16 }}>API Settings</h3>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 16 }}>
+            To save local RAM, we use Groq's extremely fast, free cloud API. Get your free API key at <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>console.groq.com</a>.
           </p>
-          <button 
-            onClick={initEngine} 
-            disabled={isLoading}
-            style={{
-              background: "var(--accent)", color: "#fff", border: "none", padding: "10px 20px", borderRadius: "var(--radius-md)",
-              cursor: isLoading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.85rem", opacity: isLoading ? 0.7 : 1
-            }}
-          >
-            {isLoading ? "Initializing..." : "Load AI Engine"}
-          </button>
-          {initProgress && <div style={{ marginTop: 16, fontSize: "0.75rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>{initProgress}</div>}
+          
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Groq API Key</label>
+            <input 
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              placeholder="gsk_..."
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+            />
+          </div>
+          
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Model Selection</label>
+            <select 
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+            >
+              <option value="llama3-8b-8192">Llama 3 8B (Fast, standard)</option>
+              <option value="llama3-70b-8192">Llama 3 70B (High quality)</option>
+              <option value="mixtral-8x7b-32768">Mixtral 8x7B (Large context)</option>
+              <option value="gemma-7b-it">Gemma 7B (Google)</option>
+            </select>
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button 
+              onClick={handleSaveSettings}
+              style={{ background: "var(--accent)", color: "#fff", border: "none", padding: "8px 16px", borderRadius: "var(--radius-md)", cursor: "pointer", fontWeight: 600 }}
+            >
+              Save Settings
+            </button>
+            {apiKey && (
+              <button 
+                onClick={clearApiKey}
+                style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-color)", padding: "8px 16px", borderRadius: "var(--radius-md)", cursor: "pointer", fontWeight: 600 }}
+              >
+                Clear Key
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -132,6 +168,11 @@ export default function WebLLMChatPanel() {
                 <div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>
               </div>
             ))}
+            {isLoading && (
+               <div style={{ alignSelf: "flex-start", background: "var(--bg-tertiary)", padding: "10px 14px", borderRadius: "var(--radius-md)", fontSize: "0.85rem" }}>
+                 <span style={{ animation: "pulse 1.5s infinite" }}>Thinking...</span>
+               </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
           
