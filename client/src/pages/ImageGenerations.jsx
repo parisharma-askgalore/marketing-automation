@@ -469,10 +469,7 @@ export default function ImageGenerations() {
 
 // ── Hugging Face inference models ─────────────────────────────────────────
 const HUGGINGFACE_MODELS = [
-  { id: "black-forest-labs/FLUX.1-schnell", label: "FLUX.1 Schnell (Fast & Free)" },
-  { id: "SG161222/RealVisXL_V4.0", label: "RealVisXL V4.0 (Photorealistic SDXL)" },
-  { id: "prompthero/openjourney", label: "Openjourney (Midjourney Style)" },
-  { id: "runwayml/stable-diffusion-v1-5", label: "Stable Diffusion 1.5 (Classic)" }
+  { id: "black-forest-labs/FLUX.1-schnell", label: "FLUX.1 Schnell (Fast & Free)" }
 ];
 
 // ── Style tokens ───────────────────────────────────────────────────────────────
