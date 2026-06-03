@@ -741,7 +741,7 @@ async def generate_image(req: GenerateImageRequest):
             "inputs": req.prompt,
         }
 
-        url = f"https://api-inference.huggingface.co/models/{model}"
+        url = f"https://router.huggingface.co/hf-inference/models/{model}"
 
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
             r = await client.post(url, headers=headers, json=payload)
