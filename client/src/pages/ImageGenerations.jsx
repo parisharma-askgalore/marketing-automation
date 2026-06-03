@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
-import { Responsive, WidthProvider } from "react-grid-layout";
+import { ResponsiveGridLayout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-
-const ResponsiveGridLayout = WidthProvider(Responsive);
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 function SpinnerIcon({ size = 14 }) {
