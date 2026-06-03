@@ -710,7 +710,7 @@ function CurrentProject({ onOpenSettings }) {
   };
 
   return (
-    <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden", minHeight: 0 }}>
 
       {/* ── COLUMN 1: Page Nav (own scroll) ── */}
       <div
@@ -1409,8 +1409,8 @@ export default function Studio() {
       {/* Settings Modal */}
       {settingsOpen && <MasterPromptsModal onClose={() => setSettingsOpen(false)} />}
 
-      {/* Main area */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      {/* Main area - must be overflow:hidden so children scroll independently */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Mobile top header */}
         <header className="mobile-header" style={{
@@ -1447,8 +1447,8 @@ export default function Studio() {
           </button>
         </header>
 
-        {/* Page content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Page content - flex:1 + min-height:0 lets it shrink and scroll inside */}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : <PastProjects />}
         </div>
       </div>
