@@ -3,7 +3,12 @@ import re
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+import chromadb
+import uuid
+import subprocess
+import shutil
+import base64
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
@@ -798,6 +803,192 @@ async def generate_image(req: GenerateImageRequest):
             "image": f"data:{content_type};base64,{b64_data}",
         }
     except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image generation failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+
+
+# ==========================================
+# MEDIA REVIEW PIPELINE
+# ==========================================
+
+# Initialize ChromaDB
+chroma_client = chromadb.PersistentClient(path=os.path.join(os.path.dirname(__file__), "chroma_db"))
+review_collection = chroma_client.get_or_create_collection(name="media_feedback")
+
+class CaptureFeedbackRequest(BaseModel):
+    project: str
+    media_type: str
+    feedback: List[str]
+
+@app.post("/api/review/capture-feedback")
+async def capture_feedback(req: CaptureFeedbackRequest):
+    """
+    Takes raw feedback strings and uses Gemini to convert them into atomic rules.
+    Then stores them into ChromaDB.
+    """
+    rules_generated = []
+    for feedback_item in req.feedback:
+        prompt = f"""Convert this feedback into a generic, atomic rule for visual creatives.
+Feedback: "{feedback_item}"
+
+Return output matching this JSON schema exactly:
+{{
+  "rule": "RULE_NAME_IN_CAPS",
+  "description": "Clear description of the rule"
+}}"""
+        try:
+            res_json = generate_json(prompt)
+            rule_id = str(uuid.uuid4())
+            rule_text = f"[{res_json.get('rule')}] {res_json.get('description')}"
+            
+            # Store in vector DB
+            review_collection.add(
+                documents=[rule_text],
+                metadatas=[{"project": req.project, "media_type": req.media_type, "original": feedback_item}],
+                ids=[rule_id]
+            )
+            rules_generated.append(res_json)
+        except Exception as e:
+            logger.error(f"Error capturing feedback {feedback_item}: {e}")
+            continue
+
+    return {"status": "success", "rules": rules_generated}
+
+
+@app.post("/api/review/analyze")
+async def analyze_media(
+    file: UploadFile = File(...),
+    media_type: str = Form("image")
+):
+    """
+    Accepts an image or video. If video, extracts frames.
+    Analyzes using Gemini Multimodal. Retrieves similar historical feedback.
+    Returns comparison report.
+    """
+    import tempfile
+    
+    # Save uploaded file
+    temp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(temp_dir, file.filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    frames = []
+    
+    try:
+        if media_type == "video":
+            # Extract frames (1 frame per second) using ffmpeg
+            frames_dir = os.path.join(temp_dir, "frames")
+            os.makedirs(frames_dir, exist_ok=True)
+            subprocess.run([
+                "ffmpeg", "-i", file_path, "-vf", "fps=1", 
+                os.path.join(frames_dir, "frame_%04d.jpg")
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            for frame_file in sorted(os.listdir(frames_dir)):
+                frame_path = os.path.join(frames_dir, frame_file)
+                with open(frame_path, "rb") as f:
+                    frames.append({
+                        "mime_type": "image/jpeg",
+                        "data": base64.b64encode(f.read()).decode("utf-8")
+                    })
+        else:
+            # Process as single image
+            with open(file_path, "rb") as f:
+                content_type = file.content_type or "image/jpeg"
+                frames.append({
+                    "mime_type": content_type,
+                    "data": base64.b64encode(f.read()).decode("utf-8")
+                })
+        
+        # 1. Vision Analysis using Gemini 1.5 Flash (stand-in for Qwen2.5-VL)
+        # Using the lowest cost but multimodal Gemini model
+        if not gemini_client:
+            raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
+        
+        vision_prompt = """Analyze this marketing creative.
+Check:
+- character appearance
+- text positioning
+- branding visibility
+- composition
+- facial expression
+- visual artifacts
+
+Return structured observations matching this JSON schema:
+{
+  "cta_position": "description",
+  "logo_visibility": "description",
+  "expression": "description",
+  "artifacts": ["list of issues"],
+  "general_notes": "string"
+}"""
+        
+        contents = [vision_prompt]
+        for frame in frames:
+            # Convert base64 back to bytes for Gemini SDK
+            contents.append(
+                types.Part.from_bytes(
+                    data=base64.b64decode(frame["data"]),
+                    mime_type=frame["mime_type"],
+                )
+            )
+            
+        logger.info(f"Sending {len(frames)} frames to Gemini for analysis.")
+        cfg = types.GenerateContentConfig(response_mime_type="application/json")
+        res = gemini_client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=contents,
+            config=cfg
+        )
+        observations = json.loads(res.text)
+        
+        # 2. Retrieve Historical Feedback
+        obs_text = " ".join([str(v) for v in observations.values() if v])
+        
+        matches = review_collection.query(
+            query_texts=[obs_text],
+            n_results=5
+        )
+        
+        historical_rules = []
+        if matches and matches["documents"] and len(matches["documents"]) > 0:
+            historical_rules = matches["documents"][0]
+            
+        # 3. Comparison Agent
+        compare_prompt = f"""Current observations from AI vision model:
+{json.dumps(observations, indent=2)}
+
+Historical recurring feedback rules:
+{json.dumps(historical_rules, indent=2)}
+
+Identify recurring issues between the current observations and historical feedback.
+Return a structured report matching this JSON schema exactly:
+{{
+  "recurring_issues": [
+    {{
+      "issue": "string",
+      "confidence_score": 0.9,
+      "historical_matches": 2
+    }}
+  ],
+  "passing_checks": ["string"]
+}}"""
+        
+        compare_res = generate_json(compare_prompt)
+        
+        return {
+            "status": "success",
+            "observations": observations,
+            "historical_rules_checked": historical_rules,
+            "report": compare_res
+        }
+            
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
         raise
     except Exception as e:
         trace_str = traceback.format_exc()

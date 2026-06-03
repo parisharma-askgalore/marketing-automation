@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import ImageGenerations from "./ImageGenerations";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
+import MediaReview from "./MediaReview";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
@@ -374,6 +375,7 @@ function Sidebar({ tab, setTab, open, onClose }) {
     { key: "current", label: "Current Project", icon: <LayersIcon /> },
     { key: "past",    label: "Past Projects",   icon: <FolderIcon /> },
     { key: "imageGen",label: "Image Generations",icon: <ImageIcon /> },
+    { key: "mediaReview", label: "Media Review Agent", icon: <CheckIcon /> },
   ];
 
   const sidebarContent = (
@@ -1449,7 +1451,7 @@ export default function Studio() {
 
         {/* Page content - flex:1 + min-height:0 lets it shrink and scroll inside */}
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-          {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : <PastProjects />}
+          {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : tab === "mediaReview" ? <MediaReview /> : <PastProjects />}
         </div>
       </div>
     </div>
