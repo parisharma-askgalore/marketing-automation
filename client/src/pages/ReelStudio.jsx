@@ -558,7 +558,7 @@ function CurrentProject({ onOpenSettings }) {
         if (!response.ok) throw new Error("Failed to generate keyframes");
         const data = await response.json();
         await sim(1100);
-        setKeyframes(data.keyframes.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null })));
+        setKeyframes(data.keyframes.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null, isGenerating: false })));
         setStep("keyframes");
       } else if (from === "keyframes") {
         const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
@@ -602,6 +602,35 @@ function CurrentProject({ onOpenSettings }) {
     }
   };
 
+  const handleGenerateKfImage = async (idx) => {
+    try {
+      setKeyframes((prev) => prev.map((kf, i) => i === idx ? { ...kf, isGenerating: true } : kf));
+      const kf = keyframes[idx];
+      const references = fields.assets.length > 0 ? [fields.assets[0].dataUrl] : [];
+      
+      const payload = {
+        model: "black-forest-labs/FLUX.1-schnell",
+        prompt: kf.text,
+        references: references,
+      };
+
+      const response = await fetch(`${API_BASE}/api/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) throw new Error("Image generation failed");
+      const data = await response.json();
+      
+      setKeyframes((prev) => prev.map((item, i) => i === idx ? { ...item, image: data.image, isGenerating: false } : item));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate image.");
+      setKeyframes((prev) => prev.map((item, i) => i === idx ? { ...item, isGenerating: false } : item));
+    }
+  };
+
   const handleEdit = async (key, editInstruction) => {
     try {
       setEditLoading((prev) => ({ ...prev, [key]: true }));
@@ -629,7 +658,7 @@ function CurrentProject({ onOpenSettings }) {
       else if (key === "storyboard") setStoryboard(data.updatedContent);
       else if (key === "videoHook") setVHook(data.updatedContent);
       else if (key === "videoSpeak") setVSpeak(data.updatedContent);
-      else if (key === "keyframes") setKeyframes(data.updatedContent.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null })));
+      else if (key === "keyframes") setKeyframes(data.updatedContent.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null, isGenerating: false })));
       else if (key === "hooks") setMarketingHooks(data.updatedContent.split("\n").filter(Boolean));
     } catch (err) {
       console.error(err);
@@ -718,21 +747,29 @@ function CurrentProject({ onOpenSettings }) {
                       </div>
                       {fields.assets.length > 0 && (
                         <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
-                          {fields.assets.map((name, i) => (
+                          {fields.assets.map((asset, i) => (
                             <span key={i} style={{
                               fontSize: "0.75rem", background: "var(--bg-tertiary)",
                               border: "1px solid var(--border-color)", color: "var(--text-secondary)",
                               padding: "2px 8px", borderRadius: "var(--radius-sm)",
                               fontFamily: "var(--font-mono)",
                             }}>
-                              {name}
+                              {asset.name}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
                     <input ref={fileRef} type="file" multiple accept="image/*" style={{ display: "none" }}
-                      onChange={(e) => setFields((f) => ({ ...f, assets: [...f.assets, ...Array.from(e.target.files).map((f) => f.name)] }))} />
+                      onChange={(e) => {
+                        Array.from(e.target.files).forEach(file => {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setFields((f) => ({ ...f, assets: [...f.assets, { name: file.name, dataUrl: reader.result }] }));
+                          };
+                          reader.readAsDataURL(file);
+                        });
+                      }} />
                   </div>
                 </div>
                 <RowFlex>
@@ -821,20 +858,37 @@ function CurrentProject({ onOpenSettings }) {
                           border: "1.5px dashed var(--border-color)", display: "flex", flexDirection: "column",
                           alignItems: "center", justifyContent: "center", cursor: "pointer",
                           transition: "all 0.15s", color: "var(--text-muted)", overflow: "hidden",
-                          background: "var(--bg-primary)",
+                          background: "var(--bg-primary)", position: "relative"
                         }}
-                        onMouseEnter={(e) => { if (!kf.image) { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.color = "var(--text-secondary)"; } }}
-                        onMouseLeave={(e) => { if (!kf.image) { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.color = "var(--text-muted)"; } }}
+                        onMouseEnter={(e) => { if (!kf.image && !kf.isGenerating) { e.currentTarget.style.borderColor = "var(--border-hover)"; e.currentTarget.style.color = "var(--text-secondary)"; } }}
+                        onMouseLeave={(e) => { if (!kf.image && !kf.isGenerating) { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.color = "var(--text-muted)"; } }}
                       >
-                        {kf.image
-                          ? <img src={kf.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <><ImageIcon /><span style={{ fontSize: "0.65rem", marginTop: 4, fontFamily: "var(--font-mono)", fontWeight: 600 }}>Image</span></>
-                        }
+                        {kf.isGenerating ? (
+                           <SpinnerIcon />
+                        ) : kf.image ? (
+                           <img src={kf.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                           <><ImageIcon /><span style={{ fontSize: "0.65rem", marginTop: 4, fontFamily: "var(--font-mono)", fontWeight: 600 }}>Upload</span></>
+                        )}
                       </div>
-                      <div>
-                        <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
-                          Frame {i + 1}
-                        </span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+                            Frame {i + 1}
+                          </span>
+                          <button
+                            onClick={() => handleGenerateKfImage(i)}
+                            disabled={kf.isGenerating}
+                            style={{
+                              fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                              border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                              color: "var(--text-primary)", cursor: kf.isGenerating ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4
+                            }}
+                          >
+                            {kf.isGenerating ? <SpinnerIcon size={12} /> : <ImageIcon size={12} />}
+                            Generate
+                          </button>
+                        </div>
                         <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
                       </div>
                     </div>

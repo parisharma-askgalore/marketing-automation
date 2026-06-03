@@ -714,6 +714,7 @@ class GenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: Optional[str] = "1:1"
     model: Optional[str] = "black-forest-labs/FLUX.1-schnell"
+    references: Optional[List[str]] = None
 
 
 @app.post("/api/generate-image")
@@ -737,8 +738,35 @@ async def generate_image(req: GenerateImageRequest):
             "Content-Type": "application/json",
         }
 
+        # Step 1: If references exist, use HF Vision (BLIP) to caption the first image
+        final_prompt = req.prompt
+        if req.references and len(req.references) > 0:
+            ref_data = req.references[0]
+            # Strip data url prefix if present
+            if ref_data.startswith("data:image"):
+                base64_img = ref_data.split(",")[1]
+            else:
+                base64_img = ref_data
+            
+            logger.info("Extracting visual context from reference image using BLIP...")
+            vision_url = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-large"
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                # HF Inference for image-to-text usually accepts base64 strings directly in 'inputs' or as binary payload
+                v_res = await client.post(vision_url, headers=headers, json={"inputs": base64_img})
+                if v_res.is_success:
+                    try:
+                        v_data = v_res.json()
+                        if isinstance(v_data, list) and len(v_data) > 0 and "generated_text" in v_data[0]:
+                            caption = v_data[0]["generated_text"]
+                            logger.info(f"BLIP Caption: {caption}")
+                            final_prompt = f"{req.prompt} [Visual reference context: {caption}]"
+                    except Exception as ve:
+                        logger.warning(f"Failed to parse BLIP response: {ve}")
+                else:
+                    logger.warning(f"BLIP vision extraction failed: {v_res.status_code} - {v_res.text[:100]}")
+
         payload = {
-            "inputs": req.prompt,
+            "inputs": final_prompt,
         }
 
         url = f"https://router.huggingface.co/hf-inference/models/{model}"
