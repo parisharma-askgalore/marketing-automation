@@ -332,7 +332,7 @@ function StepBar({ currentStep }) {
 function PageNav({ visibleSteps }) {
   const scrollTo = (key) => document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
-    <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 72, height: "fit-content", alignSelf: "start" }}>
+    <aside style={{ width: 220, flexShrink: 0, position: "sticky", top: 120, height: "fit-content", alignSelf: "start" }}>
       <p style={{
         fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
         color: "var(--text-muted)", marginBottom: 10, fontFamily: "var(--font-mono)", padding: "0 8px",

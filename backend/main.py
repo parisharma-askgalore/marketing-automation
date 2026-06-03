@@ -925,6 +925,27 @@ async def get_projects():
     }
 
 
+@app.delete("/api/delete-project/{project_id}")
+async def delete_project(project_id: str):
+    if not NOTION_API_KEY:
+        raise HTTPException(status_code=500, detail="NOTION_API_KEY is not configured on the server.")
+
+    url = f"https://api.notion.com/v1/pages/{project_id}"
+    body = {"archived": True}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.patch(url, headers=notion_headers, json=body)
+            r.raise_for_status()
+            return {"success": True}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Notion Delete Error: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(status_code=502, detail=f"Notion returned error: {e.response.text}")
+        except Exception as e:
+            logger.error(f"Notion connection error: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to connect to Notion: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     # Read port from env or default to 8000
