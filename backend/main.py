@@ -850,11 +850,11 @@ init_db()
 
 def get_embedding(text: str) -> list:
     """Generate a 768-dim embedding via Gemini text-embedding-004 (v1 REST API)."""
-    url = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent"
     response = httpx.post(
         url,
         params={"key": GEMINI_API_KEY},
-        json={"model": "models/text-embedding-004", "content": {"parts": [{"text": text}]}},
+        json={"model": "models/gemini-embedding-2", "content": {"parts": [{"text": text}]}},
         timeout=30.0
     )
     response.raise_for_status()
