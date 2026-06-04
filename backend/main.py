@@ -198,11 +198,11 @@ def get_title(properties: dict, name: str) -> str:
 
 # Ordered fallback model list – most stable first
 FALLBACK_MODELS = [
-    os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+    os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+    "gemini-2.0-flash-exp",
+    "gemini-2.0-flash",
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash",
 ]
 
 
@@ -991,7 +991,7 @@ Return structured observations matching this JSON schema:
         logger.info(f"Sending {len(frames)} frames to Gemini for analysis.")
         cfg = types.GenerateContentConfig(response_mime_type="application/json")
         res = gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=_get_model_list()[0],
             contents=contents,
             config=cfg
         )
