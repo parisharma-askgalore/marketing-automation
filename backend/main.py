@@ -5,7 +5,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 import psycopg
-from pgvector.psycopg import register_vector
+import math
 import uuid
 import subprocess
 import shutil
@@ -818,20 +818,17 @@ async def generate_image(req: GenerateImageRequest):
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_conn():
-    """Open a fresh psycopg connection and register pgvector support."""
-    conn = psycopg.connect(DATABASE_URL)
-    register_vector(conn)
-    return conn
+    """Open a plain psycopg connection (no pgvector extension required)."""
+    return psycopg.connect(DATABASE_URL)
 
 def init_db():
-    """Create the pgvector extension and feedback table if they don't exist."""
+    """Create the feedback table if it doesn't exist (uses JSONB for embeddings)."""
     if not DATABASE_URL:
         logger.warning("DATABASE_URL is not set – media review persistence is disabled.")
         return
     try:
         conn = get_db_conn()
         with conn.cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS media_feedback (
                     id UUID PRIMARY KEY,
@@ -839,7 +836,7 @@ def init_db():
                     media_type TEXT,
                     original TEXT,
                     rule_text TEXT,
-                    embedding vector(768)
+                    embedding JSONB
                 );
             """)
         conn.commit()
@@ -852,12 +849,25 @@ def init_db():
 init_db()
 
 def get_embedding(text: str) -> list:
-    """Generate a 768-dim embedding via Gemini text-embedding-004."""
-    result = gemini_client.models.embed_content(
-        model="text-embedding-004",
-        contents=text
+    """Generate a 768-dim embedding via Gemini text-embedding-004 (v1 REST API)."""
+    url = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
+    response = httpx.post(
+        url,
+        params={"key": GEMINI_API_KEY},
+        json={"model": "models/text-embedding-004", "content": {"parts": [{"text": text}]}},
+        timeout=30.0
     )
-    return result.embeddings[0].values
+    response.raise_for_status()
+    return response.json()["embedding"]["values"]
+
+def cosine_similarity(a: list, b: list) -> float:
+    """Compute cosine similarity between two vectors."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x ** 2 for x in a))
+    norm_b = math.sqrt(sum(x ** 2 for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
 class CaptureFeedbackRequest(BaseModel):
@@ -896,7 +906,7 @@ Return output matching this JSON schema exactly:
                     cur.execute(
                         """INSERT INTO media_feedback (id, project, media_type, original, rule_text, embedding)
                            VALUES (%s, %s, %s, %s, %s, %s)""",
-                        (rule_id, req.project, req.media_type, feedback_item, rule_text, embedding)
+                        (rule_id, req.project, req.media_type, feedback_item, rule_text, json.dumps(embedding))
                     )
                 conn.commit()
                 rules_generated.append(res_json)
@@ -997,7 +1007,7 @@ Return structured observations matching this JSON schema:
         )
         observations = json.loads(res.text)
         
-        # 2. Retrieve Historical Feedback via pgvector cosine similarity
+        # 2. Retrieve Historical Feedback via Python cosine similarity
         obs_text = " ".join([str(v) for v in observations.values() if v])
 
         historical_rules = []
@@ -1006,15 +1016,17 @@ Return structured observations matching this JSON schema:
                 obs_embedding = get_embedding(obs_text)
                 db_conn = get_db_conn()
                 with db_conn.cursor() as cur:
-                    cur.execute(
-                        """SELECT rule_text FROM media_feedback
-                           ORDER BY embedding <=> %s::vector
-                           LIMIT 5""",
-                        (obs_embedding,)
-                    )
-                    rows = cur.fetchall()
-                    historical_rules = [row[0] for row in rows]
+                    cur.execute("SELECT rule_text, embedding FROM media_feedback")
+                    all_rows = cur.fetchall()
                 db_conn.close()
+                # Score each rule by cosine similarity and return top 5
+                scored = []
+                for row in all_rows:
+                    stored_emb = row[1] if isinstance(row[1], list) else json.loads(row[1])
+                    score = cosine_similarity(obs_embedding, stored_emb)
+                    scored.append((row[0], score))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                historical_rules = [s[0] for s in scored[:5]]
             except Exception as e:
                 logger.error(f"DB similarity search failed: {e}")
             
@@ -1224,12 +1236,12 @@ async def update_feedback(rule_id: str, req: UpdateFeedbackRequest):
             if req.original is not None:
                 cur.execute(
                     "UPDATE media_feedback SET rule_text=%s, original=%s, embedding=%s WHERE id=%s",
-                    (req.rule_text, req.original, new_embedding, rule_id)
+                    (req.rule_text, req.original, json.dumps(new_embedding), rule_id)
                 )
             else:
                 cur.execute(
                     "UPDATE media_feedback SET rule_text=%s, embedding=%s WHERE id=%s",
-                    (req.rule_text, new_embedding, rule_id)
+                    (req.rule_text, json.dumps(new_embedding), rule_id)
                 )
         conn.commit()
         conn.close()
