@@ -1051,6 +1051,85 @@ Return a structured report matching this JSON schema exactly:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+class UpdateFeedbackRequest(BaseModel):
+    rule_text: str
+    original: Optional[str] = None
+
+@app.get("/api/review/feedback")
+async def list_feedback():
+    """Return all stored atomic rules from PostgreSQL."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured.")
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, project, media_type, original, rule_text
+                FROM media_feedback
+                ORDER BY project, media_type
+            """)
+            rows = cur.fetchall()
+        conn.close()
+        return {
+            "rules": [
+                {
+                    "id": str(row[0]),
+                    "project": row[1],
+                    "media_type": row[2],
+                    "original": row[3],
+                    "rule_text": row[4],
+                }
+                for row in rows
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to list feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/review/feedback/{rule_id}")
+async def update_feedback(rule_id: str, req: UpdateFeedbackRequest):
+    """Update the rule_text (and optionally original) of an existing rule, re-embedding it."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured.")
+    try:
+        new_embedding = get_embedding(req.rule_text)
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            if req.original is not None:
+                cur.execute(
+                    "UPDATE media_feedback SET rule_text=%s, original=%s, embedding=%s WHERE id=%s",
+                    (req.rule_text, req.original, new_embedding, rule_id)
+                )
+            else:
+                cur.execute(
+                    "UPDATE media_feedback SET rule_text=%s, embedding=%s WHERE id=%s",
+                    (req.rule_text, new_embedding, rule_id)
+                )
+        conn.commit()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to update feedback {rule_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/review/feedback/{rule_id}")
+async def delete_feedback(rule_id: str):
+    """Delete a stored rule by ID."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured.")
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM media_feedback WHERE id=%s", (rule_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to delete feedback {rule_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/optimize-prompt")
 async def optimize_prompt(req: OptimizePromptRequest):
