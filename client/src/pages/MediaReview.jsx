@@ -238,6 +238,8 @@ export default function MediaReview() {
   const [rules, setRules] = useState([]);
   const [loadingRules, setLoadingRules] = useState(false);
   const [kbSearch, setKbSearch] = useState('');
+  const [seedingDefaults, setSeedingDefaults] = useState(false);
+  const [defaultSeedResult, setDefaultSeedResult] = useState(null);
 
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
@@ -258,6 +260,22 @@ export default function MediaReview() {
   useEffect(() => {
     if (activeTab === 'knowledge') fetchRules();
   }, [activeTab, fetchRules]);
+
+  const handleSeedDefaults = async () => {
+    setSeedingDefaults(true);
+    setDefaultSeedResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/review/seed-defaults`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to seed defaults');
+      const data = await res.json();
+      setDefaultSeedResult(data);
+      await fetchRules();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSeedingDefaults(false);
+    }
+  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -519,8 +537,8 @@ export default function MediaReview() {
       {/* ── Knowledge Base Tab ── */}
       {activeTab === 'knowledge' && (
         <div className="fade-in">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-            <div style={{ flex: 1, marginRight: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
               <input
                 type="text"
                 value={kbSearch}
@@ -529,10 +547,31 @@ export default function MediaReview() {
                 style={inputStyle}
               />
             </div>
-            <button onClick={fetchRules} disabled={loadingRules} style={btnStyle(loadingRules, false)}>
-              {loadingRules ? <SpinnerIcon /> : '↻'} Refresh
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={handleSeedDefaults}
+                disabled={seedingDefaults}
+                style={btnStyle(seedingDefaults, false)}
+                title="Load 15 pre-built anti-AI-detection rules into the database"
+              >
+                {seedingDefaults ? <><SpinnerIcon /> Loading...</> : '✦ Load Default Rules'}
+              </button>
+              <button onClick={fetchRules} disabled={loadingRules} style={btnStyle(loadingRules, false)}>
+                {loadingRules ? <SpinnerIcon /> : '↻'} Refresh
+              </button>
+            </div>
           </div>
+
+          {defaultSeedResult && (
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "var(--radius-md)", padding: "10px 16px", marginBottom: 20, fontSize: "0.85rem", color: "#15803d", display: "flex", gap: 12, alignItems: "center" }}>
+              <span>✓</span>
+              <span>
+                <strong>{defaultSeedResult.inserted.length}</strong> rules added
+                {defaultSeedResult.skipped.length > 0 && <>, <strong>{defaultSeedResult.skipped.length}</strong> already existed (skipped)</>}.
+              </span>
+              <button onClick={() => setDefaultSeedResult(null)} style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", color: "#15803d", fontSize: "1rem" }}>✕</button>
+            </div>
+          )}
 
           {loadingRules ? (
             <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>

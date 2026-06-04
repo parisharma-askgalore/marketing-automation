@@ -1051,6 +1051,131 @@ Return a structured report matching this JSON schema exactly:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+# ── Default Anti-AI-Detection Rules ──────────────────────────────────────────
+DEFAULT_ANTI_AI_RULES = [
+    {
+        "rule": "NO_PLASTIC_SKIN",
+        "description": "Skin must show natural texture, pores, subtle imperfections, and slight unevenness. Avoid the smooth, overly-airbrushed 'plastic' look common in AI-generated faces.",
+        "original": "Character skin looks too smooth and artificially perfect — obvious AI generation."
+    },
+    {
+        "rule": "NATURAL_HAIR_STRANDS",
+        "description": "Hair must have individual strands, natural flyaways, and realistic variation in thickness. Avoid perfectly uniform hair that looks like a painted texture.",
+        "original": "Hair looks like a solid texture block, not real individual strands."
+    },
+    {
+        "rule": "ANATOMICALLY_CORRECT_HANDS",
+        "description": "Hands must have exactly five fingers with correct proportions and natural joint angles. AI-generated content frequently produces extra fingers, fused digits, or unnatural hand poses.",
+        "original": "Character has distorted or extra fingers — classic AI artifact."
+    },
+    {
+        "rule": "ASYMMETRIC_FACIAL_FEATURES",
+        "description": "Faces must show natural subtle asymmetry. Perfect facial symmetry is an immediate AI tell — real human faces are slightly asymmetric.",
+        "original": "Face looks unnaturally symmetrical and perfect, immediately feels AI-generated."
+    },
+    {
+        "rule": "NO_MIDJOURNEY_GLOW",
+        "description": "Avoid the soft, diffused ethereal glow around subjects that is a hallmark of diffusion model outputs. Lighting must cast hard or realistically soft shadows with clear directionality.",
+        "original": "The image has that telltale diffusion model 'glow' around the subject — looks AI."
+    },
+    {
+        "rule": "REALISTIC_EYE_REFLECTIONS",
+        "description": "Eyes must show a single, physically consistent catchlight that matches the light source direction. AI-generated eyes often have multiple or symmetrical catchlights that are physically impossible.",
+        "original": "Eyes have weird multiple light reflections that do not match the scene lighting."
+    },
+    {
+        "rule": "NATURAL_FABRIC_PHYSICS",
+        "description": "Clothing must show realistic creases, wrinkles, and gravity-based draping. AI-generated fabric often looks painted on, with no physical weight or movement.",
+        "original": "Clothing looks painted on with no real draping or wrinkles."
+    },
+    {
+        "rule": "CONSISTENT_BACKGROUND_DEPTH",
+        "description": "Background must have physically accurate depth of field blur that matches the lens focal length implied by the foreground. AI often renders everything uniformly sharp or adds fake bokeh.",
+        "original": "Background blur looks fake and inconsistent with the foreground depth."
+    },
+    {
+        "rule": "NO_STERILE_ENVIRONMENT",
+        "description": "Environments must contain realistic imperfections — slight dust, natural surface variation, organic placement of objects. Overly clean, empty, or perfectly arranged environments signal AI generation.",
+        "original": "The room/background looks completely sterile and artificial."
+    },
+    {
+        "rule": "FILM_GRAIN_TEXTURE",
+        "description": "Finished creative should carry subtle film grain or natural sensor noise. Digital perfection with zero grain reads as AI-generated. A slight texture adds cinematic authenticity.",
+        "original": "Image is too digitally clean — looks like AI output, not real camera footage."
+    },
+    {
+        "rule": "CORRECT_TEXT_IN_FRAME",
+        "description": "Any visible text within the image or video frame must be legible, correctly spelled, and use consistent typography. AI frequently generates garbled, misspelled, or illegible on-screen text.",
+        "original": "Text visible in the background is garbled and misspelled — AI artifact."
+    },
+    {
+        "rule": "NATURAL_MICRO_EXPRESSIONS",
+        "description": "Facial expressions must show subtle natural variation — no locked 'perfect smile' frozen in place. Slight micro-expressions and natural muscle tension should be present.",
+        "original": "Character expression looks frozen and unnatural — the smile is too perfect and static."
+    },
+    {
+        "rule": "NO_OVERSATURATION",
+        "description": "Color palette must remain within the dynamic range of real camera sensors. Avoid oversaturated, hyperrealistic color grading that exceeds what a real camera can capture.",
+        "original": "Colors are oversaturated and hyper-vivid in a way that no real camera produces."
+    },
+    {
+        "rule": "CONSISTENT_LIGHT_SOURCE",
+        "description": "All shadows, highlights, and reflections must originate from a single consistent light source direction. AI frequently introduces lighting contradictions — shadows pointing in multiple directions.",
+        "original": "Shadows on the face and background are pointing in different directions — physically impossible."
+    },
+    {
+        "rule": "NO_FLOATING_ACCESSORIES",
+        "description": "Jewelry, glasses, earrings, and accessories must be physically anchored to the character. AI-generated accessories frequently hover slightly away from the skin or merge incorrectly.",
+        "original": "Earrings appear to be floating slightly away from the character's ears."
+    },
+]
+
+
+@app.post("/api/review/seed-defaults")
+async def seed_default_rules():
+    """
+    Seeds the database with pre-built anti-AI-detection atomic rules.
+    Safe to call multiple times — skips rules with duplicate rule_text.
+    """
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured.")
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
+
+    inserted = []
+    skipped = []
+
+    conn = get_db_conn()
+    try:
+        for item in DEFAULT_ANTI_AI_RULES:
+            rule_text = f"[{item['rule']}] {item['description']}"
+            # Check if already exists
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM media_feedback WHERE rule_text=%s", (rule_text,))
+                if cur.fetchone():
+                    skipped.append(item["rule"])
+                    continue
+            # Embed and insert
+            try:
+                embedding = get_embedding(rule_text)
+                rule_id = str(uuid.uuid4())
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO media_feedback (id, project, media_type, original, rule_text, embedding)
+                           VALUES (%s, %s, %s, %s, %s, %s)""",
+                        (rule_id, "Default Rules", "image+video", item["original"], rule_text, embedding)
+                    )
+                conn.commit()
+                inserted.append(item["rule"])
+            except Exception as e:
+                logger.error(f"Failed to seed rule {item['rule']}: {e}")
+                continue
+    finally:
+        conn.close()
+
+    return {"status": "success", "inserted": inserted, "skipped": skipped}
+
+
 class UpdateFeedbackRequest(BaseModel):
     rule_text: str
     original: Optional[str] = None
