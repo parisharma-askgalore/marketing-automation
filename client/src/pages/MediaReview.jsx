@@ -150,6 +150,7 @@ export default function MediaReview() {
   };
 
   return (
+    <div style={{ height: "100%", overflowY: "auto" }}>
     <div style={{ maxWidth: 860, width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
       
       <div style={{ marginBottom: 32 }}>
@@ -370,6 +371,7 @@ export default function MediaReview() {
         </div>
       )}
 
+    </div>
     </div>
   );
 }
