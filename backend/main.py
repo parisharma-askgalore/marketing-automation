@@ -198,11 +198,11 @@ def get_title(properties: dict, name: str) -> str:
 
 # Ordered fallback model list – most stable first
 FALLBACK_MODELS = [
-    os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+    os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+    "gemini-3-flash-preview",
     "gemini-2.0-flash-exp",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
 ]
 
 
