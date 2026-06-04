@@ -1175,7 +1175,7 @@ async def seed_default_rules():
                     cur.execute(
                         """INSERT INTO media_feedback (id, project, media_type, original, rule_text, embedding)
                            VALUES (%s, %s, %s, %s, %s, %s)""",
-                        (rule_id, "Default Rules", "image+video", item["original"], rule_text, embedding)
+                        (rule_id, "Default Rules", "image+video", item["original"], rule_text, json.dumps(embedding))
                     )
                 conn.commit()
                 inserted.append(item["rule"])
