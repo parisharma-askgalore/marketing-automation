@@ -4,7 +4,8 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
-import chromadb
+import psycopg
+from pgvector.psycopg import register_vector
 import uuid
 import subprocess
 import shutil
@@ -813,9 +814,51 @@ async def generate_image(req: GenerateImageRequest):
 # MEDIA REVIEW PIPELINE
 # ==========================================
 
-# Initialize ChromaDB
-chroma_client = chromadb.PersistentClient(path=os.path.join(os.path.dirname(__file__), "chroma_db"))
-review_collection = chroma_client.get_or_create_collection(name="media_feedback")
+# PostgreSQL connection helper
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def get_db_conn():
+    """Open a fresh psycopg connection and register pgvector support."""
+    conn = psycopg.connect(DATABASE_URL)
+    register_vector(conn)
+    return conn
+
+def init_db():
+    """Create the pgvector extension and feedback table if they don't exist."""
+    if not DATABASE_URL:
+        logger.warning("DATABASE_URL is not set – media review persistence is disabled.")
+        return
+    try:
+        conn = get_db_conn()
+        with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS media_feedback (
+                    id UUID PRIMARY KEY,
+                    project TEXT,
+                    media_type TEXT,
+                    original TEXT,
+                    rule_text TEXT,
+                    embedding vector(768)
+                );
+            """)
+        conn.commit()
+        conn.close()
+        logger.info("PostgreSQL media_feedback table ready.")
+    except Exception as e:
+        logger.error(f"DB init failed: {e}")
+
+# Run on startup
+init_db()
+
+def get_embedding(text: str) -> list:
+    """Generate a 768-dim embedding via Gemini text-embedding-004."""
+    result = gemini_client.models.embed_content(
+        model="text-embedding-004",
+        contents=text
+    )
+    return result.embeddings[0].values
+
 
 class CaptureFeedbackRequest(BaseModel):
     project: str
@@ -825,12 +868,17 @@ class CaptureFeedbackRequest(BaseModel):
 @app.post("/api/review/capture-feedback")
 async def capture_feedback(req: CaptureFeedbackRequest):
     """
-    Takes raw feedback strings and uses Gemini to convert them into atomic rules.
-    Then stores them into ChromaDB.
+    Takes raw feedback strings, converts them into atomic rules via Gemini,
+    embeds them, and stores them in PostgreSQL.
     """
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
+
     rules_generated = []
-    for feedback_item in req.feedback:
-        prompt = f"""Convert this feedback into a generic, atomic rule for visual creatives.
+    conn = get_db_conn()
+    try:
+        for feedback_item in req.feedback:
+            prompt = f"""Convert this feedback into a generic, atomic rule for visual creatives.
 Feedback: "{feedback_item}"
 
 Return output matching this JSON schema exactly:
@@ -838,21 +886,25 @@ Return output matching this JSON schema exactly:
   "rule": "RULE_NAME_IN_CAPS",
   "description": "Clear description of the rule"
 }}"""
-        try:
-            res_json = generate_json(prompt)
-            rule_id = str(uuid.uuid4())
-            rule_text = f"[{res_json.get('rule')}] {res_json.get('description')}"
-            
-            # Store in vector DB
-            review_collection.add(
-                documents=[rule_text],
-                metadatas=[{"project": req.project, "media_type": req.media_type, "original": feedback_item}],
-                ids=[rule_id]
-            )
-            rules_generated.append(res_json)
-        except Exception as e:
-            logger.error(f"Error capturing feedback {feedback_item}: {e}")
-            continue
+            try:
+                res_json = generate_json(prompt)
+                rule_id = str(uuid.uuid4())
+                rule_text = f"[{res_json.get('rule')}] {res_json.get('description')}"
+                embedding = get_embedding(rule_text)
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO media_feedback (id, project, media_type, original, rule_text, embedding)
+                           VALUES (%s, %s, %s, %s, %s, %s)""",
+                        (rule_id, req.project, req.media_type, feedback_item, rule_text, embedding)
+                    )
+                conn.commit()
+                rules_generated.append(res_json)
+            except Exception as e:
+                logger.error(f"Error capturing feedback '{feedback_item}': {e}")
+                continue
+    finally:
+        conn.close()
 
     return {"status": "success", "rules": rules_generated}
 
@@ -945,17 +997,26 @@ Return structured observations matching this JSON schema:
         )
         observations = json.loads(res.text)
         
-        # 2. Retrieve Historical Feedback
+        # 2. Retrieve Historical Feedback via pgvector cosine similarity
         obs_text = " ".join([str(v) for v in observations.values() if v])
-        
-        matches = review_collection.query(
-            query_texts=[obs_text],
-            n_results=5
-        )
-        
+
         historical_rules = []
-        if matches and matches["documents"] and len(matches["documents"]) > 0:
-            historical_rules = matches["documents"][0]
+        if DATABASE_URL:
+            try:
+                obs_embedding = get_embedding(obs_text)
+                db_conn = get_db_conn()
+                with db_conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT rule_text FROM media_feedback
+                           ORDER BY embedding <=> %s::vector
+                           LIMIT 5""",
+                        (obs_embedding,)
+                    )
+                    rows = cur.fetchall()
+                    historical_rules = [row[0] for row in rows]
+                db_conn.close()
+            except Exception as e:
+                logger.error(f"DB similarity search failed: {e}")
             
         # 3. Comparison Agent
         compare_prompt = f"""Current observations from AI vision model:
