@@ -1,6 +1,7 @@
 # Marketing Automation Script Assistant
 
 This project is a React-based Marketing Automation Script assistant. It has been migrated from an n8n backend workflow to a high-performance **FastAPI backend** in Python. The database is stored in **Notion**, and the AI model is powered by **Google Gemini**.
+[Deployment]https://marketing-automation-wmlf.vercel.app/
 
 ## Project Structure
 
