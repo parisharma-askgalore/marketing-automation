@@ -91,6 +91,20 @@ export default function ImageGenerations() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeIframeUrl, setActiveIframeUrl] = useState("");
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [recentRefs, setRecentRefs] = useState([]);
+  const [recentRefsLoading, setRecentRefsLoading] = useState(false);
+
+  // Fetch the last 2 reference images from Supabase on mount
+  useEffect(() => {
+    setRecentRefsLoading(true);
+    fetch(`${API_BASE}/api/image-history?source=reference&limit=2`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.images) setRecentRefs(data.images);
+      })
+      .catch(() => {})
+      .finally(() => setRecentRefsLoading(false));
+  }, []);
 
   const [textLayers, setTextLayers] = useState([
     { id: 1, text: "Take", color: "#ffffff", font: "Outfit", size: 38 },
@@ -150,6 +164,11 @@ export default function ImageGenerations() {
               url: dataUrl,
               publicUrl: data.public_url || null,
             }]);
+            // Refresh recently-added list
+            fetch(`${API_BASE}/api/image-history?source=reference&limit=2`)
+              .then(r => r.json())
+              .then(d => { if (d?.images) setRecentRefs(d.images); })
+              .catch(() => {});
           })
           .catch(() => {
             // Save anyway even if Supabase fails
@@ -325,6 +344,74 @@ export default function ImageGenerations() {
               </div>
             </div>
             <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={handleReferenceUpload} />
+
+            {/* ── Recently Added References ── */}
+            {(recentRefsLoading || recentRefs.length > 0) && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+                    Recently Added
+                  </span>
+                  <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>— click to attach</span>
+                </div>
+                {recentRefsLoading ? (
+                  <div style={{ display: "flex", gap: 10 }}>
+                    {[0, 1].map(i => (
+                      <div key={i} style={{ width: 64, height: 64, borderRadius: "var(--radius-md)", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", animation: "pulse 1.4s ease-in-out infinite" }} />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 10 }}>
+                    {recentRefs.map((img, idx) => {
+                      const alreadyAdded = references.some(r => r.publicUrl === img.url || r.url === img.url);
+                      return (
+                        <div
+                          key={img.id || idx}
+                          title={alreadyAdded ? "Already attached" : `Attach: ${img.storage_path?.split("/").pop() || "reference"}`}
+                          onClick={() => {
+                            if (alreadyAdded) return;
+                            setReferences(prev => [...prev, {
+                              name: img.storage_path?.split("/").pop() || `recent_${idx + 1}`,
+                              url: img.url,
+                              publicUrl: img.url,
+                            }]);
+                          }}
+                          style={{
+                            position: "relative", width: 64, height: 64,
+                            borderRadius: "var(--radius-md)",
+                            border: alreadyAdded ? "2px solid var(--accent)" : "1.5px solid var(--border-color)",
+                            overflow: "hidden", cursor: alreadyAdded ? "default" : "pointer",
+                            opacity: alreadyAdded ? 0.6 : 1,
+                            transition: "border-color 0.15s, opacity 0.15s",
+                            flexShrink: 0,
+                          }}
+                          onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.borderColor = "var(--accent)"; }}
+                          onMouseLeave={e => { if (!alreadyAdded) e.currentTarget.style.borderColor = "var(--border-color)"; }}
+                        >
+                          <img src={img.url} alt={`recent-${idx}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {alreadyAdded && (
+                            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            </div>
+                          )}
+                          {!alreadyAdded && (
+                            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0)", transition: "background 0.15s" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.28)"}
+                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0, transition: "opacity 0.15s" }}
+                                onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                              ><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {references.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
                 {references.map((ref, idx) => (

@@ -70,7 +70,7 @@ SUPABASE_BUCKET = "marketing-assets"
 NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")
 NVIDIA_QWEN_EDIT_URL = os.getenv(
     "QWEN_IMAGE_EDIT_URL",
-    "https://integrate.api.nvidia.com/v1/images/generations",
+    "https://integrate.api.nvidia.com/v1/images/edits",
 )
 
 if not NOTION_API_KEY:
@@ -857,9 +857,8 @@ class GenerateImageNvidiaRequest(BaseModel):
 async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
     """
     Edit/generate an image via the NVIDIA NIM API → Qwen-Image-Edit model.
-    Uses NVIDIA_NIM_API_KEY (set in Render env vars) with Bearer auth.
-    If a reference_image is provided it is passed as image_url for editing;
-    otherwise pure text-to-image generation is performed.
+    Uses NVIDIA_NIM_API_KEY (Bearer auth) against /v1/images/edits.
+    The endpoint follows the OpenAI images.edit spec and accepts multipart/form-data.
     Returns base64-encoded image data in the same shape as /api/generate-image.
     """
     try:
@@ -869,21 +868,6 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
                 detail="NVIDIA_NIM_API_KEY is not configured on the server.",
             )
 
-        headers = {
-            "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        # Build the NVIDIA NIM payload
-        # The Qwen-Image-Edit NIM endpoint accepts OpenAI-compatible image generation params
-        payload: dict = {
-            "model": "qwen/qwen-image-edit",
-            "prompt": req.prompt,
-            "n": req.n or 1,
-            "response_format": "b64_json",
-        }
-
         # Map aspect_ratio to pixel size
         size_map = {
             "1:1":  "1024x1024",
@@ -892,26 +876,51 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
             "4:3":  "1024x768",
             "3:4":  "768x1024",
         }
-        payload["size"] = size_map.get(req.aspect_ratio or "1:1", "1024x1024")
+        size = size_map.get(req.aspect_ratio or "1:1", "1024x1024")
+
+        # /v1/images/edits uses multipart/form-data (OpenAI images.edit spec)
+        # Authorization header only – do NOT set Content-Type (httpx sets it with boundary)
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
+        }
+
+        # Build multipart fields
+        fields: dict = {
+            "model":           (None, "qwen/qwen-image-edit", "text/plain"),
+            "prompt":          (None, req.prompt,              "text/plain"),
+            "n":               (None, str(req.n or 1),         "text/plain"),
+            "response_format": (None, "b64_json",              "text/plain"),
+            "size":            (None, size,                    "text/plain"),
+        }
 
         if req.negative_prompt:
-            payload["negative_prompt"] = req.negative_prompt
+            fields["negative_prompt"] = (None, req.negative_prompt, "text/plain")
 
-        # If a reference image is provided, include it for guided editing
+        # Attach reference image as the "image" file field
         if req.reference_image:
             ref_data = req.reference_image
-            # Strip data-URL prefix – the API wants raw base64
             if ref_data.startswith("data:image"):
-                ref_data = ref_data.split(",", 1)[1]
-            payload["image"] = ref_data
+                # Extract mime type and raw base64
+                header_part, b64_part = ref_data.split(",", 1)
+                mime = header_part.split(":")[1].split(";")[0]  # e.g. image/jpeg
+                img_bytes = base64.b64decode(b64_part)
+            else:
+                mime = "image/jpeg"
+                img_bytes = base64.b64decode(ref_data)
+            ext = mime.split("/")[-1].replace("jpeg", "jpg")
+            fields["image"] = (f"reference.{ext}", img_bytes, mime)
 
         logger.info(
             f"Calling NVIDIA NIM Qwen-Image-Edit url={NVIDIA_QWEN_EDIT_URL} "
-            f"size={payload['size']} has_reference={bool(req.reference_image)}"
+            f"size={size} has_reference={bool(req.reference_image)}"
         )
 
         async with httpx.AsyncClient(timeout=180.0) as client:
-            r = await client.post(NVIDIA_QWEN_EDIT_URL, headers=headers, json=payload)
+            r = await client.post(
+                NVIDIA_QWEN_EDIT_URL,
+                headers=headers,
+                files=fields,
+            )
 
         if not r.is_success:
             logger.error(f"NVIDIA NIM Qwen error: {r.status_code} — {r.text[:400]}")
@@ -932,7 +941,6 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
 
         b64_data = data_list[0].get("b64_json", "")
         if not b64_data:
-            # Some versions return a URL instead
             img_url = data_list[0].get("url", "")
             if img_url:
                 async with httpx.AsyncClient(timeout=60.0) as client:
