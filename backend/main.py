@@ -16,6 +16,8 @@ import httpx
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import traceback
+from supabase import create_client, Client as SupabaseClient
 
 # Load env variables
 load_dotenv()
@@ -62,11 +64,25 @@ app.add_middleware(
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "36511ec4-57c6-80a6-80ae-c10ee489a2f5")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service role key
+SUPABASE_BUCKET = "marketing-assets"
 
 if not NOTION_API_KEY:
     logger.warning("NOTION_API_KEY is not set.")
 if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY is not set.")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.warning("SUPABASE_URL or SUPABASE_KEY is not set – image persistence disabled.")
+
+# Supabase client (used for image storage only)
+supabase: SupabaseClient | None = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.info("Supabase client initialised.")
+    except Exception as _e:
+        logger.error(f"Failed to initialise Supabase client: {_e}")
 
 # Configure Gemini client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -798,10 +814,22 @@ async def generate_image(req: GenerateImageRequest):
                 raise HTTPException(status_code=502, detail=f"Hugging Face error: {err_text}")
 
         b64_data = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Persist generated image to Supabase (failure won't break the response)
+        saved = save_image_to_supabase(
+            image_bytes=image_bytes,
+            content_type=content_type,
+            source="generated",
+            prompt=req.prompt,
+            model=model,
+        )
+
         return {
             "status": "success",
             "mime_type": content_type,
             "image": f"data:{content_type};base64,{b64_data}",
+            "history_id": saved["id"] if saved else None,
+            "public_url": saved["public_url"] if saved else None,
         }
     except HTTPException:
         raise
@@ -870,7 +898,53 @@ def cosine_similarity(a: list, b: list) -> float:
     return dot / (norm_a * norm_b)
 
 
-class CaptureFeedbackRequest(BaseModel):
+def save_image_to_supabase(
+    image_bytes: bytes,
+    content_type: str,
+    source: str,          # "generated" | "reference" | "project_input" | "media_review"
+    prompt: str = "",
+    model: str = "",
+    project: str = "",
+    filename: str = "",
+) -> dict | None:
+    """
+    Upload image bytes to Supabase Storage (marketing-assets bucket) and
+    insert a record into the image_history table.
+    Returns the inserted row dict on success, None on failure (never raises).
+    """
+    if not supabase:
+        logger.warning("Supabase not configured – skipping image save.")
+        return None
+    try:
+        ext = content_type.split("/")[-1].replace("jpeg", "jpg")
+        safe_name = filename or f"{uuid.uuid4()}.{ext}"
+        storage_path = f"{source}/{safe_name}"
+
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            storage_path,
+            image_bytes,
+            {"content-type": content_type, "upsert": "false"},
+        )
+
+        public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(storage_path)
+
+        row = {
+            "id": str(uuid.uuid4()),
+            "source": source,
+            "url": public_url,
+            "storage_path": storage_path,
+            "prompt": prompt[:2000] if prompt else "",
+            "model": model,
+            "project": project,
+        }
+        supabase.table("image_history").insert(row).execute()
+        logger.info(f"Saved image to Supabase: {storage_path}")
+        return {**row, "public_url": public_url}
+    except Exception as e:
+        logger.error(f"Supabase image save failed ({source}): {e}")
+        return None
+
+
     project: str
     media_type: str
     feedback: List[str]
@@ -959,11 +1033,19 @@ async def analyze_media(
         else:
             # Process as single image
             with open(file_path, "rb") as f:
+                raw_bytes = f.read()
                 content_type = file.content_type or "image/jpeg"
                 frames.append({
                     "mime_type": content_type,
-                    "data": base64.b64encode(f.read()).decode("utf-8")
+                    "data": base64.b64encode(raw_bytes).decode("utf-8")
                 })
+            # Persist uploaded media image to Supabase
+            save_image_to_supabase(
+                image_bytes=raw_bytes,
+                content_type=content_type,
+                source="media_review",
+                filename=file.filename or f"{uuid.uuid4()}.jpg",
+            )
         
         # 1. Vision Analysis using Gemini 1.5 Flash (stand-in for Qwen2.5-VL)
         # Using the lowest cost but multimodal Gemini model
@@ -1451,6 +1533,92 @@ async def delete_project(project_id: str):
             logger.error(f"Notion connection error: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to connect to Notion: {str(e)}")
 
+
+
+
+# ==========================================
+# SUPABASE IMAGE HISTORY ENDPOINTS
+# ==========================================
+
+class SaveImageRequest(BaseModel):
+    image: str          # data URL  (data:<mime>;base64,<data>)
+    source: str         # "reference" | "project_input"
+    prompt: str = ""
+    model: str = ""
+    project: str = ""
+    filename: str = ""
+
+@app.post("/api/save-image")
+async def save_image(req: SaveImageRequest):
+    """
+    Called by the frontend to persist a reference image or project-input image
+    to Supabase Storage + image_history table.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase is not configured on the server.")
+    try:
+        # Parse the data URL
+        if "," not in req.image:
+            raise HTTPException(status_code=400, detail="Invalid data URL.")
+        header, b64 = req.image.split(",", 1)
+        content_type = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
+        image_bytes = base64.b64decode(b64)
+        saved = save_image_to_supabase(
+            image_bytes=image_bytes,
+            content_type=content_type,
+            source=req.source,
+            prompt=req.prompt,
+            model=req.model,
+            project=req.project,
+            filename=req.filename or "",
+        )
+        if not saved:
+            raise HTTPException(status_code=500, detail="Failed to save image to Supabase.")
+        return {"status": "success", "history_id": saved["id"], "public_url": saved["public_url"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"save_image failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/image-history")
+async def get_image_history(source: str = "", project: str = "", limit: int = 100):
+    """
+    Return saved image history rows from Supabase, newest first.
+    Optional filters: source, project.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase is not configured on the server.")
+    try:
+        query = supabase.table("image_history").select("*").order("created_at", desc=True).limit(limit)
+        if source:
+            query = query.eq("source", source)
+        if project:
+            query = query.eq("project", project)
+        result = query.execute()
+        return {"images": result.data}
+    except Exception as e:
+        logger.error(f"get_image_history failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/image-history/{image_id}")
+async def delete_image_history(image_id: str):
+    """Delete an image_history record and its file from Supabase Storage."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase is not configured on the server.")
+    try:
+        result = supabase.table("image_history").select("storage_path").eq("id", image_id).execute()
+        if result.data:
+            storage_path = result.data[0].get("storage_path")
+            if storage_path:
+                supabase.storage.from_(SUPABASE_BUCKET).remove([storage_path])
+        supabase.table("image_history").delete().eq("id", image_id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"delete_image_history failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

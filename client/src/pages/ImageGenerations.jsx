@@ -133,7 +133,16 @@ export default function ImageGenerations() {
   const handleReferenceUpload = (e) => {
     Array.from(e.target.files).forEach(file => {
       const reader = new FileReader();
-      reader.onload = () => setReferences(prev => [...prev, { name: file.name, url: reader.result }]);
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        setReferences(prev => [...prev, { name: file.name, url: dataUrl }]);
+        // Persist reference image to Supabase (fire-and-forget)
+        fetch(`${API_BASE}/api/save-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: dataUrl, source: "reference", filename: file.name }),
+        }).catch(() => {});
+      };
       reader.readAsDataURL(file);
     });
   };
@@ -168,6 +177,7 @@ export default function ImageGenerations() {
       if (!res.ok) throw new Error("Failed to generate.");
       const data = await res.json();
       if (data.status === "success") setBaseSceneImg(data.image);
+      // public_url and history_id are returned by backend (already saved server-side)
     } catch (err) { alert("Error: " + err.message); }
     finally { setGeneratingBg(false); }
   };

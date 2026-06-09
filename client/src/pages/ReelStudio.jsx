@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import ImageGenerations from "./ImageGenerations";
 import WebLLMChatPanel from "../components/WebLLMChatPanel";
 import MediaReview from "./MediaReview";
+import ImageHistory from "./ImageHistory";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
@@ -68,6 +69,11 @@ const ArrowLeftIcon = () => (
 const ImageIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+  </svg>
+);
+const HistoryIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5-4v-4" /><polyline points="3 3 3 7 7 7" />
   </svg>
 );
 const MenuIcon = () => (
@@ -376,6 +382,7 @@ function Sidebar({ tab, setTab, open, onClose }) {
     { key: "past",    label: "Past Projects",   icon: <FolderIcon /> },
     { key: "imageGen",label: "Image Generations",icon: <ImageIcon /> },
     { key: "mediaReview", label: "Media Review Agent", icon: <CheckIcon /> },
+    { key: "history",     label: "Image History",       icon: <HistoryIcon /> },
   ];
 
   const sidebarContent = (
@@ -808,7 +815,14 @@ function CurrentProject({ onOpenSettings }) {
                         Array.from(e.target.files).forEach(file => {
                           const reader = new FileReader();
                           reader.onloadend = () => {
-                            setFields((f) => ({ ...f, assets: [...f.assets, { name: file.name, dataUrl: reader.result }] }));
+                            const dataUrl = reader.result;
+                            setFields((f) => ({ ...f, assets: [...f.assets, { name: file.name, dataUrl }] }));
+                            // Persist project input image to Supabase (fire-and-forget)
+                            fetch(`${API_BASE}/api/save-image`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ image: dataUrl, source: "project_input", filename: file.name }),
+                            }).catch(() => {});
                           };
                           reader.readAsDataURL(file);
                         });
@@ -1451,7 +1465,7 @@ export default function Studio() {
 
         {/* Page content - flex:1 + min-height:0 lets it shrink and scroll inside */}
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-          {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : tab === "mediaReview" ? <MediaReview /> : <PastProjects />}
+          {tab === "current" ? <CurrentProject onOpenSettings={() => setSettingsOpen(true)} /> : tab === "imageGen" ? <ImageGenerations /> : tab === "mediaReview" ? <MediaReview /> : tab === "history" ? <ImageHistory /> : <PastProjects />}
         </div>
       </div>
     </div>
