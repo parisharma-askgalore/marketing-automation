@@ -67,13 +67,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service role key
 SUPABASE_BUCKET = "marketing-assets"
-NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")
-NVIDIA_NIM_MODEL = os.getenv("NVIDIA_NIM_MODEL", "qwen/qwen-image-edit-2511")
-# Build the correct /v1/infer endpoint regardless of what QWEN_IMAGE_EDIT_URL is set to in Render.
-# The env var may contain the old (wrong) /v1/images/edits path — we always override to /v1/infer.
-_nim_base = os.getenv("QWEN_IMAGE_EDIT_URL", "https://integrate.api.nvidia.com/v1/images/edits")
-_nim_base = _nim_base.split("/v1/")[0]  # strip any path, keep host
-QWEN_IMAGE_EDIT_URL = f"{_nim_base}/v1/infer"
+FAL_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")  # reuse existing Render env var slot
+# fal.ai is the confirmed cloud provider for Qwen-Image-Edit-2511.
+# integrate.api.nvidia.com only hosts LLM/VLM models, NOT visual GenAI image models.
+FAL_QWEN_EDIT_URL = "https://fal.run/fal-ai/qwen-image-edit-2511"
 
 if not NOTION_API_KEY:
     logger.warning("NOTION_API_KEY is not set.")
@@ -81,8 +78,8 @@ if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY is not set.")
 if not SUPABASE_URL or not SUPABASE_KEY:
     logger.warning("SUPABASE_URL or SUPABASE_KEY is not set – image persistence disabled.")
-if not NVIDIA_NIM_API_KEY:
-    logger.warning("NVIDIA_NIM_API_KEY is not set – NVIDIA NIM image editing disabled.")
+if not FAL_API_KEY:
+    logger.warning("NVIDIA_NIM_API_KEY (used as FAL_KEY) is not set – Qwen image editing disabled.")
 
 # Supabase client (used for image storage only)
 supabase: SupabaseClient | None = None
@@ -858,68 +855,95 @@ class GenerateImageNvidiaRequest(BaseModel):
 @app.post("/api/generate-image-nvidia")
 async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
     """
-    Generate / edit an image via NVIDIA NIM Qwen-Image-Edit API.
-    A reference image (from the References panel, already saved to Supabase) is
-    required – the model is an image-editing model, not a text-to-image model.
-    Returns base64-encoded image data.
+    Edit an image via fal.ai → Qwen-Image-Edit-2511.
+    A reference image (already saved to Supabase) is required.
+    Returns base64-encoded image data in the same shape as /api/generate-image.
+
+    NOTE: integrate.api.nvidia.com only hosts LLM/VLM chat models.
+    Visual GenAI image models (Qwen-Image-Edit etc.) are served via fal.ai.
+    We reuse NVIDIA_NIM_API_KEY as the FAL_KEY.
     """
     try:
-        if not NVIDIA_NIM_API_KEY:
-            raise HTTPException(status_code=500, detail="NVIDIA_NIM_API_KEY is not configured on the server.")
+        if not FAL_API_KEY:
+            raise HTTPException(status_code=500, detail="NVIDIA_NIM_API_KEY (FAL_KEY) is not configured on the server.")
 
         if not req.reference_image:
             raise HTTPException(
                 status_code=400,
-                detail="A reference image is required for the NVIDIA Qwen image-edit model. "
+                detail="A reference image is required for Qwen Image Edit. "
                        "Please upload at least one image in the Reference Assets panel.",
             )
 
-        # Normalise reference to a data URL (it should already be one from the frontend)
+        # Normalise to a data URL
         ref_data = req.reference_image
         if not ref_data.startswith("data:image"):
-            # Treat as raw base64 – wrap it
             ref_data = f"data:image/jpeg;base64,{ref_data}"
 
+        # Map aspect_ratio to fal image_size enum
+        aspect_map = {
+            "1:1": "square_hd",
+            "9:16": "portrait_16_9",
+            "16:9": "landscape_16_9",
+        }
+        image_size = aspect_map.get(req.aspect_ratio or "1:1", "square_hd")
+
         payload: dict = {
-            "model": NVIDIA_NIM_MODEL,
             "prompt": req.prompt,
-            "image": ref_data,
+            "image_urls": [ref_data],
+            "image_size": image_size,
+            "num_images": 1,
+            "output_format": "png",
+            "sync_mode": True,          # returns data URI inline, no polling needed
+            "enable_safety_checker": False,
+            "acceleration": "regular",
         }
         if req.negative_prompt:
             payload["negative_prompt"] = req.negative_prompt
 
-        logger.info(f"Calling NVIDIA NIM model={NVIDIA_NIM_MODEL} url={QWEN_IMAGE_EDIT_URL}")
+        logger.info(f"Calling fal.ai Qwen-Image-Edit-2511 url={FAL_QWEN_EDIT_URL}")
 
         headers = {
-            "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
+            "Authorization": f"Key {FAL_API_KEY}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
         }
 
         async with httpx.AsyncClient(timeout=180.0) as client:
-            r = await client.post(QWEN_IMAGE_EDIT_URL, headers=headers, json=payload)
+            r = await client.post(FAL_QWEN_EDIT_URL, headers=headers, json=payload)
 
         if not r.is_success:
-            logger.error(f"NVIDIA NIM error: {r.status_code} — {r.text[:400]}")
+            logger.error(f"fal.ai Qwen error: {r.status_code} — {r.text[:400]}")
             raise HTTPException(
                 status_code=502,
-                detail=f"NVIDIA NIM returned {r.status_code}: {r.text[:400]}",
+                detail=f"fal.ai returned {r.status_code}: {r.text[:400]}",
             )
 
         resp_json = r.json()
-        # /v1/infer returns: {"artifacts": [{"base64": "...", "mediaType": "image/jpeg"}]}
-        artifact = resp_json.get("artifacts", [{}])[0]
-        b64_data = artifact.get("base64") or artifact.get("b64_json")
-        if not b64_data:
-            raise HTTPException(status_code=502, detail=f"Unexpected NVIDIA NIM response shape: {str(resp_json)[:300]}")
-        content_type = artifact.get("mediaType", "image/jpeg")
-        image_bytes = base64.b64decode(b64_data)
+        # fal response: {"images": [{"url": "data:image/png;base64,...", ...}], ...}
+        images = resp_json.get("images", [])
+        if not images:
+            raise HTTPException(status_code=502, detail=f"fal.ai returned no images: {str(resp_json)[:300]}")
+
+        img_entry = images[0]
+        img_url = img_entry.get("url", "")
+        content_type = img_entry.get("content_type", "image/png")
+
+        # img_url is a data URI in sync_mode
+        if img_url.startswith("data:"):
+            _, b64_data = img_url.split(",", 1)
+            image_bytes = base64.b64decode(b64_data)
+        else:
+            # fallback: download from URL
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                dl = await client.get(img_url)
+            image_bytes = dl.content
+            b64_data = base64.b64encode(image_bytes).decode()
+
         saved = save_image_to_supabase(
             image_bytes=image_bytes,
             content_type=content_type,
             source="generated",
             prompt=req.prompt,
-            model=NVIDIA_NIM_MODEL,
+            model="fal/qwen-image-edit-2511",
         )
 
         return {
@@ -933,8 +957,8 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"NVIDIA NIM image generation failed: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate image via NVIDIA NIM: {str(e)}")
+        logger.error(f"Qwen image edit (fal.ai) failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate image via Qwen Edit: {str(e)}")
 
 
 # ==========================================
