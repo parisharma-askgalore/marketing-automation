@@ -67,6 +67,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service role key
 SUPABASE_BUCKET = "marketing-assets"
+NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")
+NVIDIA_NIM_MODEL = os.getenv("NVIDIA_NIM_MODEL", "qwen/qwen-image-edit-2511")
+QWEN_IMAGE_EDIT_URL = os.getenv("QWEN_IMAGE_EDIT_URL", "https://integrate.api.nvidia.com/v1/images/edits")
 
 if not NOTION_API_KEY:
     logger.warning("NOTION_API_KEY is not set.")
@@ -74,6 +77,8 @@ if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY is not set.")
 if not SUPABASE_URL or not SUPABASE_KEY:
     logger.warning("SUPABASE_URL or SUPABASE_KEY is not set – image persistence disabled.")
+if not NVIDIA_NIM_API_KEY:
+    logger.warning("NVIDIA_NIM_API_KEY is not set – NVIDIA NIM image editing disabled.")
 
 # Supabase client (used for image storage only)
 supabase: SupabaseClient | None = None
@@ -836,6 +841,95 @@ async def generate_image(req: GenerateImageRequest):
     except Exception as e:
         logger.error(f"Image generation failed: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+
+
+class GenerateImageNvidiaRequest(BaseModel):
+    prompt: str
+    aspect_ratio: Optional[str] = "1:1"
+    negative_prompt: Optional[str] = None
+    reference_image: Optional[str] = None   # data URL of the reference image (already saved to Supabase)
+    n: Optional[int] = 1
+
+
+@app.post("/api/generate-image-nvidia")
+async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
+    """
+    Generate / edit an image via NVIDIA NIM Qwen-Image-Edit API.
+    A reference image (from the References panel, already saved to Supabase) is
+    required – the model is an image-editing model, not a text-to-image model.
+    Returns base64-encoded image data.
+    """
+    try:
+        if not NVIDIA_NIM_API_KEY:
+            raise HTTPException(status_code=500, detail="NVIDIA_NIM_API_KEY is not configured on the server.")
+
+        if not req.reference_image:
+            raise HTTPException(
+                status_code=400,
+                detail="A reference image is required for the NVIDIA Qwen image-edit model. "
+                       "Please upload at least one image in the Reference Assets panel.",
+            )
+
+        # Normalise reference to a data URL (it should already be one from the frontend)
+        ref_data = req.reference_image
+        if not ref_data.startswith("data:image"):
+            # Treat as raw base64 – wrap it
+            ref_data = f"data:image/jpeg;base64,{ref_data}"
+
+        payload: dict = {
+            "model": NVIDIA_NIM_MODEL,
+            "prompt": req.prompt,
+            "image": ref_data,
+            "n": req.n or 1,
+            "response_format": "b64_json",
+        }
+        if req.negative_prompt:
+            payload["negative_prompt"] = req.negative_prompt
+
+        logger.info(f"Calling NVIDIA NIM model={NVIDIA_NIM_MODEL} url={QWEN_IMAGE_EDIT_URL}")
+
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            r = await client.post(QWEN_IMAGE_EDIT_URL, headers=headers, json=payload)
+
+        if not r.is_success:
+            logger.error(f"NVIDIA NIM error: {r.status_code} — {r.text[:400]}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"NVIDIA NIM returned {r.status_code}: {r.text[:400]}",
+            )
+
+        resp_json = r.json()
+        b64_data = resp_json["data"][0]["b64_json"]
+        image_bytes = base64.b64decode(b64_data)
+        content_type = "image/png"
+
+        # Persist to Supabase
+        saved = save_image_to_supabase(
+            image_bytes=image_bytes,
+            content_type=content_type,
+            source="generated",
+            prompt=req.prompt,
+            model=NVIDIA_NIM_MODEL,
+        )
+
+        return {
+            "status": "success",
+            "mime_type": content_type,
+            "image": f"data:{content_type};base64,{b64_data}",
+            "history_id": saved["id"] if saved else None,
+            "public_url": saved["public_url"] if saved else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"NVIDIA NIM image generation failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate image via NVIDIA NIM: {str(e)}")
 
 
 # ==========================================

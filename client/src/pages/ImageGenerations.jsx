@@ -79,7 +79,9 @@ export default function ImageGenerations() {
   );
   const [userPrompt, setUserPrompt] = useState("A hyper-realistic premium female mountaineer holding a steel thermos mug, sitting on Everest basecamp rocks, looking directly at the camera with extreme detail, background of massive snowy blue sky mountains.");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [provider, setProvider] = useState("huggingface"); // "huggingface" | "nvidia"
   const [selectedModel, setSelectedModel] = useState("black-forest-labs/FLUX.1-schnell");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [generatingBg, setGeneratingBg] = useState(false);
   const [baseSceneImg, setBaseSceneImg] = useState(null);
   const [references, setReferences] = useState([]);
@@ -135,13 +137,24 @@ export default function ImageGenerations() {
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result;
-        setReferences(prev => [...prev, { name: file.name, url: dataUrl }]);
-        // Persist reference image to Supabase (fire-and-forget)
+        // Persist reference image to Supabase and capture the public URL
         fetch(`${API_BASE}/api/save-image`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: dataUrl, source: "reference", filename: file.name }),
-        }).catch(() => {});
+        })
+          .then(r => r.json())
+          .then(data => {
+            setReferences(prev => [...prev, {
+              name: file.name,
+              url: dataUrl,
+              publicUrl: data.public_url || null,
+            }]);
+          })
+          .catch(() => {
+            // Save anyway even if Supabase fails
+            setReferences(prev => [...prev, { name: file.name, url: dataUrl, publicUrl: null }]);
+          });
       };
       reader.readAsDataURL(file);
     });
@@ -164,20 +177,47 @@ export default function ImageGenerations() {
   const handleGenerateBaseScene = async () => {
     try {
       setGeneratingBg(true);
-      const res = await fetch(`${API_BASE}/api/generate-image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: `${userPrompt}. Style: ${globalPrompt}`,
-          aspect_ratio: aspectRatio,
-          model: selectedModel,
-          references: references.map(r => r.url),
-        })
-      });
-      if (!res.ok) throw new Error("Failed to generate.");
-      const data = await res.json();
-      if (data.status === "success") setBaseSceneImg(data.image);
-      // public_url and history_id are returned by backend (already saved server-side)
+
+      if (provider === "nvidia") {
+        // NVIDIA NIM Qwen Image Edit — requires at least one reference image
+        if (references.length === 0) {
+          alert("NVIDIA Qwen Image Edit requires at least one reference image. Please upload one in the Reference Assets panel.");
+          return;
+        }
+        const refImage = references[0].url; // data URL (already saved to Supabase)
+        const res = await fetch(`${API_BASE}/api/generate-image-nvidia`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: `${userPrompt}. Style: ${globalPrompt}`,
+            aspect_ratio: aspectRatio,
+            negative_prompt: negativePrompt || undefined,
+            reference_image: refImage,
+            n: 1,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || "NVIDIA NIM generation failed.");
+        }
+        const data = await res.json();
+        if (data.status === "success") setBaseSceneImg(data.image);
+      } else {
+        // HuggingFace
+        const res = await fetch(`${API_BASE}/api/generate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: `${userPrompt}. Style: ${globalPrompt}`,
+            aspect_ratio: aspectRatio,
+            model: selectedModel,
+            references: references.map(r => r.url),
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to generate.");
+        const data = await res.json();
+        if (data.status === "success") setBaseSceneImg(data.image);
+      }
     } catch (err) { alert("Error: " + err.message); }
     finally { setGeneratingBg(false); }
   };
@@ -326,16 +366,71 @@ export default function ImageGenerations() {
                   </select>
                 </div>
                 <div style={{ flex: 2 }}>
+                  <label style={lbl}>Generation Provider</label>
+                  <div style={{ display: "flex", gap: 0, border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+                    {[
+                      { id: "huggingface", label: "🤗 Hugging Face" },
+                      { id: "nvidia", label: "⚡ NVIDIA NIM" },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => setProvider(p.id)}
+                        style={{
+                          flex: 1, border: "none", padding: "9.5px 0", fontSize: "0.8rem", fontWeight: 700,
+                          cursor: "pointer", transition: "all 0.15s",
+                          background: provider === p.id ? "var(--accent)" : "var(--bg-primary)",
+                          color: provider === p.id ? "#fff" : "var(--text-secondary)",
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Provider-specific controls */}
+              {provider === "huggingface" && (
+                <div>
                   <label style={lbl}>Hugging Face Model</label>
                   <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} style={sel}>
                     {HUGGINGFACE_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
+                      <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
                 </div>
-              </div>
+              )}
+
+              {provider === "nvidia" && (
+                <div style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)" }}>⚡ NVIDIA Qwen Image Edit</span>
+                    <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4, padding: "1px 6px" }}>qwen-image-edit-2511</span>
+                  </div>
+                  <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>
+                    📌 Upload a reference image above — it will be used as the base for image editing. The first reference image is sent to the model.
+                  </p>
+                  {references.length === 0 && (
+                    <div style={{ fontSize: "0.72rem", color: "#f59e0b", fontWeight: 600 }}>
+                      ⚠️ No reference image uploaded yet. Add one in the Reference Assets panel above.
+                    </div>
+                  )}
+                  {references.length > 0 && (
+                    <div style={{ fontSize: "0.72rem", color: "#10b981", fontWeight: 600 }}>
+                      ✓ {references.length} reference image{references.length > 1 ? "s" : ""} ready — using first image.
+                    </div>
+                  )}
+                  <div>
+                    <label style={lbl}>Negative Prompt (optional)</label>
+                    <input
+                      value={negativePrompt}
+                      onChange={e => setNegativePrompt(e.target.value)}
+                      placeholder="Things to avoid, e.g. blurry, cartoon, low quality…"
+                      style={{ ...inp, fontSize: "0.82rem" }}
+                    />
+                  </div>
+                </div>
+              )}
               <button onClick={handleGenerateBaseScene} disabled={generatingBg || !userPrompt.trim()}
 
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: generatingBg ? "var(--bg-tertiary)" : "var(--accent)", color: generatingBg ? "var(--text-muted)" : "#fff", border: "none", borderRadius: "var(--radius-md)", padding: "11px 0", fontWeight: 700, cursor: generatingBg ? "not-allowed" : "pointer", transition: "all 0.15s" }}>
@@ -406,7 +501,7 @@ export default function ImageGenerations() {
 
         {/* ── ROW 3: Base Output + Text PNG ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 0 }}>
-          <Card title="Layer 2: Generated Scene (Hugging Face API)" icon="🖼️">
+          <Card title={`Layer 2: Generated Scene (${provider === "nvidia" ? "NVIDIA NIM · Qwen Edit" : "Hugging Face API"})`} icon="🖼️">
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", minHeight: 280 }}>
               {baseSceneImg ? (
                 <img src={baseSceneImg} alt="Base Scene" style={{ maxWidth: "100%", maxHeight: 360, objectFit: "contain", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }} />
