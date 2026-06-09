@@ -69,7 +69,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # service role key
 SUPABASE_BUCKET = "marketing-assets"
 NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")
 NVIDIA_NIM_MODEL = os.getenv("NVIDIA_NIM_MODEL", "qwen/qwen-image-edit-2511")
-QWEN_IMAGE_EDIT_URL = os.getenv("QWEN_IMAGE_EDIT_URL", "https://integrate.api.nvidia.com/v1/images/edits")
+# Build the correct /v1/infer endpoint regardless of what QWEN_IMAGE_EDIT_URL is set to in Render.
+# The env var may contain the old (wrong) /v1/images/edits path — we always override to /v1/infer.
+_nim_base = os.getenv("QWEN_IMAGE_EDIT_URL", "https://integrate.api.nvidia.com/v1/images/edits")
+_nim_base = _nim_base.split("/v1/")[0]  # strip any path, keep host
+QWEN_IMAGE_EDIT_URL = f"{_nim_base}/v1/infer"
 
 if not NOTION_API_KEY:
     logger.warning("NOTION_API_KEY is not set.")
@@ -880,8 +884,6 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
             "model": NVIDIA_NIM_MODEL,
             "prompt": req.prompt,
             "image": ref_data,
-            "n": req.n or 1,
-            "response_format": "b64_json",
         }
         if req.negative_prompt:
             payload["negative_prompt"] = req.negative_prompt
@@ -891,6 +893,7 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
         headers = {
             "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
         async with httpx.AsyncClient(timeout=180.0) as client:
@@ -904,11 +907,13 @@ async def generate_image_nvidia(req: GenerateImageNvidiaRequest):
             )
 
         resp_json = r.json()
-        b64_data = resp_json["data"][0]["b64_json"]
+        # /v1/infer returns: {"artifacts": [{"base64": "...", "mediaType": "image/jpeg"}]}
+        artifact = resp_json.get("artifacts", [{}])[0]
+        b64_data = artifact.get("base64") or artifact.get("b64_json")
+        if not b64_data:
+            raise HTTPException(status_code=502, detail=f"Unexpected NVIDIA NIM response shape: {str(resp_json)[:300]}")
+        content_type = artifact.get("mediaType", "image/jpeg")
         image_bytes = base64.b64decode(b64_data)
-        content_type = "image/png"
-
-        # Persist to Supabase
         saved = save_image_to_supabase(
             image_bytes=image_bytes,
             content_type=content_type,
