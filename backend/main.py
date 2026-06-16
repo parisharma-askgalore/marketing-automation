@@ -1087,6 +1087,8 @@ def save_image_to_supabase(
         return None
 
 
+
+class CaptureFeedbackRequest(BaseModel):
     project: str
     media_type: str
     feedback: List[str]
