@@ -289,7 +289,14 @@ function RowFlex({ children, extraStyle }) {
 // ── Progress Steps Bar ──────────────────────────────────────────────────────────
 function StepBar({ currentStep }) {
   const curIdx = STEP_ORDER.indexOf(currentStep);
-  const scrollTo = (key) => document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollTo = (key) => {
+    const el = document.getElementById(`section-${key}`);
+    const container = el?.closest("[data-scroll-container]");
+    if (el && container) {
+      const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 56;
+      container.scrollTo({ top, behavior: "smooth" });
+    }
+  };
 
   return (
     <div style={{
@@ -518,11 +525,18 @@ function CurrentProject({ onOpenSettings }) {
   const [editingKf, setEditingKf] = useState(-1);
   const [editingKfText, setEditingKfText] = useState("");
   const fileRef = useRef(null);
-  const bottomRef = useRef(null); // kept for compatibility
+  const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
 
   const curIdx = STEP_ORDER.indexOf(step);
   const visibleSteps = STEP_ORDER.slice(0, curIdx + 1);
-  const scrollToSection = (sectionId) => setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  const scrollToSection = (sectionId) => {
+    const el = document.getElementById(sectionId);
+    if (el && scrollRef.current) {
+      const top = el.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top + scrollRef.current.scrollTop - 56;
+      scrollRef.current.scrollTo({ top, behavior: "smooth" });
+    }
+  };
 
   const handleGenerateHooks = async () => {
     try {
@@ -743,9 +757,9 @@ function CurrentProject({ onOpenSettings }) {
         <PageNav visibleSteps={visibleSteps} />
       </div>
 
-      {/* ── COLUMN 2: Main Content (own scroll) ── */}
-      <div style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        {/* StepBar sticky at top of this column */}
+      {/* ── COLUMN 2: Main Content (own scroll via ref) ── */}
+      <div ref={scrollRef} data-scroll-container style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto" }}>
+        {/* StepBar sticky at top */}
         <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--bg-primary)", borderBottom: "1px solid var(--border-color)" }}>
           <StepBar currentStep={step} />
         </div>
