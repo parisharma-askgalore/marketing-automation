@@ -7,7 +7,7 @@ import ImageHistory from "./ImageHistory";
 const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const STEP_ORDER = ["input", "hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"];
+const STEP_ORDER = ["input", "hooks", "script", "storyboard", "keyframes", "videoHook", "videoSpeak"];
 const STEP_LABELS = {
   input: "Input",
   hooks: "Hooks",
@@ -585,6 +585,18 @@ function CurrentProject({ onOpenSettings }) {
     try {
       setStepLoading(from);
       if (from === "script") {
+        const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, keyframes: [], script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
+        });
+        if (!response.ok) throw new Error("Failed to generate storyboard");
+        const data = await response.json();
+        await sim(1100);
+        setStoryboard(data.storyboard);
+        setStep("storyboard");
+        scrollToSection("section-storyboard");
+      } else if (from === "storyboard") {
         const response = await fetch(`${API_BASE}/api/generate-keyframe-prompts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -600,18 +612,6 @@ function CurrentProject({ onOpenSettings }) {
         // auto-generate images for all keyframes
         autoGenerateKfImages(kfList);
       } else if (from === "keyframes") {
-        const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, keyframes, script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
-        });
-        if (!response.ok) throw new Error("Failed to generate storyboard");
-        const data = await response.json();
-        await sim(1100);
-        setStoryboard(data.storyboard);
-        setStep("storyboard");
-        scrollToSection("section-storyboard");
-      } else if (from === "storyboard") {
         const response = await fetch(`${API_BASE}/api/generate-video-generation-hook-prompt`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -898,6 +898,20 @@ function CurrentProject({ onOpenSettings }) {
               </div>
             )}
 
+            {/* STORYBOARD */}
+            {visibleSteps.includes("storyboard") && (
+              <div id="section-storyboard">
+                <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={(text) => handleEdit("storyboard", text)}>
+                  <ContentBg>{storyboard}</ContentBg>
+                  <RowFlex>
+                    <PrimaryBtn onClick={() => handleNext("storyboard")} disabled={stepLoading === "storyboard"}>
+                      {stepLoading === "storyboard" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
+                    </PrimaryBtn>
+                  </RowFlex>
+                </FieldBox>
+              </div>
+            )}
+
             {/* KEYFRAMES */}
             {visibleSteps.includes("keyframes") && (
               <div id="section-keyframes">
@@ -953,20 +967,6 @@ function CurrentProject({ onOpenSettings }) {
                   <RowFlex>
                     <PrimaryBtn onClick={() => handleNext("keyframes")} disabled={stepLoading === "keyframes"}>
                       {stepLoading === "keyframes" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
-                    </PrimaryBtn>
-                  </RowFlex>
-                </FieldBox>
-              </div>
-            )}
-
-            {/* STORYBOARD */}
-            {visibleSteps.includes("storyboard") && (
-              <div id="section-storyboard">
-                <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={(text) => handleEdit("storyboard", text)}>
-                  <ContentBg>{storyboard}</ContentBg>
-                  <RowFlex>
-                    <PrimaryBtn onClick={() => handleNext("storyboard")} disabled={stepLoading === "storyboard"}>
-                      {stepLoading === "storyboard" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
                     </PrimaryBtn>
                   </RowFlex>
                 </FieldBox>
@@ -1128,6 +1128,10 @@ function PastProjectDetail({ project, onBack }) {
         <ContentBg>{project.script}</ContentBg>
       </FieldBox>
 
+      <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={() => handleEdit("storyboard")}>
+        <ContentBg>{project.storyboard}</ContentBg>
+      </FieldBox>
+
       <FieldBox label="Keyframe Prompts" loading={editLoading["keyframes"]} onEdit={() => handleEdit("keyframes")}>
         {project.keyframes.map((kf, i) => (
           <div key={i} style={{
@@ -1150,10 +1154,6 @@ function PastProjectDetail({ project, onBack }) {
             </div>
           </div>
         ))}
-      </FieldBox>
-
-      <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={() => handleEdit("storyboard")}>
-        <ContentBg>{project.storyboard}</ContentBg>
       </FieldBox>
 
       <FieldBox label="Video Hook Prompt" loading={editLoading["videoHook"]} onEdit={() => handleEdit("videoHook")}>
@@ -1457,7 +1457,7 @@ function MasterPromptsModal({ onClose }) {
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
                 Customize the instructions sent to the AI for each generation step. Variables and output formatting rules are automatically appended by the system.
               </p>
-              {["hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"].map(key => (
+              {["hooks", "script", "storyboard", "keyframes", "videoHook", "videoSpeak"].map(key => (
                 <div key={key}>
                   <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
                   <textarea

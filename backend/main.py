@@ -128,7 +128,7 @@ class KeyframeItem(BaseModel):
 
 class GenerateStoryboardRequest(BaseModel):
     projectId: str
-    keyframes: List[KeyframeItem]
+    keyframes: List[KeyframeItem] = []
     script: str
     selectedHook: str
     hook: str
@@ -485,9 +485,10 @@ Return output matching this JSON schema exactly:
 
 @app.post("/api/generate-storyboard-prompt")
 async def generate_storyboard_prompt(req: GenerateStoryboardRequest):
-    keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes])
+    keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes]) if req.keyframes else ""
     
     master_prompts = get_prompts()
+    keyframes_section = f"\nKeyframes:\n{keyframes_str}\n" if keyframes_str else ""
     prompt = f"""You are a cinematic AI commercial director creating a hyper-realistic vertical storyboard for Higgsfield AI video generation.
 
 The storyboard is for a premium advertising reel promoting:
@@ -511,10 +512,7 @@ Speaking Script:
 
 Selected Hook:
 {req.selectedHook}
-
-Keyframes:
-{keyframes_str}
-
+{keyframes_section}
 Tone:
 {req.tone}
 
@@ -706,8 +704,8 @@ Modify ONLY according to the user request.
     columns = {
         0: "marketing_hooks",
         1: "script",
-        2: "keyframes",
-        3: "storyboard",
+        2: "storyboard",
+        3: "keyframes",
         4: "video_hook",
         5: "video_speak"
     }
@@ -1105,7 +1103,7 @@ def save_image_to_supabase(
 
 ALLOWED_PROJECT_FIELDS = {
     "hook", "tone", "audience", "marketing_hooks", "selected_hook",
-    "script", "keyframes", "storyboard", "video_hook", "video_speak"
+    "script", "storyboard", "keyframes", "video_hook", "video_speak"
 }
 
 
@@ -1185,8 +1183,8 @@ def _compute_status(p: dict) -> str:
     """Derive a human-readable status from which fields are filled."""
     if p.get("video_speak"):  return "Complete"
     if p.get("video_hook"):   return "Video Hook"
-    if p.get("storyboard"):   return "Storyboard"
     if p.get("keyframes"):    return "Keyframes"
+    if p.get("storyboard"):   return "Storyboard"
     if p.get("script"):       return "Script"
     if p.get("selected_hook"):return "Hook Selected"
     return "Draft"
