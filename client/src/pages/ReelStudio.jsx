@@ -7,7 +7,7 @@ import ImageHistory from "./ImageHistory";
 const API_BASE = import.meta.env.VITE_API_BASE || "https://script-auto.onrender.com";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const STEP_ORDER = ["input", "hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"];
+const STEP_ORDER = ["input", "hooks", "script", "storyboard", "keyframes", "videoHook", "videoSpeak"];
 const STEP_LABELS = {
   input: "Input",
   hooks: "Hooks",
@@ -104,6 +104,13 @@ const TrashIcon = () => (
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
     <path d="M10 11v6M14 11v6" />
     <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </svg>
+);
+const UploadIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
   </svg>
 );
 
@@ -508,6 +515,8 @@ function CurrentProject({ onOpenSettings }) {
   const [projectId, setProjectId] = useState("");
   const [stepLoading, setStepLoading] = useState(null);
   const [editLoading, setEditLoading] = useState({});
+  const [editingKf, setEditingKf] = useState(-1);
+  const [editingKfText, setEditingKfText] = useState("");
   const fileRef = useRef(null);
   const bottomRef = useRef(null); // kept for compatibility
 
@@ -585,6 +594,18 @@ function CurrentProject({ onOpenSettings }) {
     try {
       setStepLoading(from);
       if (from === "script") {
+        const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, keyframes: [], script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
+        });
+        if (!response.ok) throw new Error("Failed to generate storyboard");
+        const data = await response.json();
+        await sim(1100);
+        setStoryboard(data.storyboard);
+        setStep("storyboard");
+        scrollToSection("section-storyboard");
+      } else if (from === "storyboard") {
         const response = await fetch(`${API_BASE}/api/generate-keyframe-prompts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -600,18 +621,6 @@ function CurrentProject({ onOpenSettings }) {
         // auto-generate images for all keyframes
         autoGenerateKfImages(kfList);
       } else if (from === "keyframes") {
-        const response = await fetch(`${API_BASE}/api/generate-storyboard-prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, keyframes, script, selectedHook: selHook, hook: fields.hook, tone: fields.tone, audience: fields.audience }),
-        });
-        if (!response.ok) throw new Error("Failed to generate storyboard");
-        const data = await response.json();
-        await sim(1100);
-        setStoryboard(data.storyboard);
-        setStep("storyboard");
-        scrollToSection("section-storyboard");
-      } else if (from === "storyboard") {
         const response = await fetch(`${API_BASE}/api/generate-video-generation-hook-prompt`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -898,6 +907,20 @@ function CurrentProject({ onOpenSettings }) {
               </div>
             )}
 
+            {/* STORYBOARD */}
+            {visibleSteps.includes("storyboard") && (
+              <div id="section-storyboard">
+                <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={(text) => handleEdit("storyboard", text)}>
+                  <ContentBg>{storyboard}</ContentBg>
+                  <RowFlex>
+                    <PrimaryBtn onClick={() => handleNext("storyboard")} disabled={stepLoading === "storyboard"}>
+                      {stepLoading === "storyboard" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
+                    </PrimaryBtn>
+                  </RowFlex>
+                </FieldBox>
+              </div>
+            )}
+
             {/* KEYFRAMES */}
             {visibleSteps.includes("keyframes") && (
               <div id="section-keyframes">
@@ -933,40 +956,75 @@ function CurrentProject({ onOpenSettings }) {
                           <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
                             Frame {i + 1}
                           </span>
-                          <button
-                            onClick={() => handleGenerateKfImage(i)}
-                            disabled={kf.isGenerating}
-                            style={{
-                              fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
-                              border: "1px solid var(--border-color)", background: "var(--bg-primary)",
-                              color: "var(--text-primary)", cursor: kf.isGenerating ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4
-                            }}
-                          >
-                            {kf.isGenerating ? <SpinnerIcon size={12} /> : <ImageIcon size={12} />}
-                            Generate
-                          </button>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              onClick={() => { setEditingKf(i); setEditingKfText(kf.text); }}
+                              style={{
+                                fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                                border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+                              }}
+                            >
+                              <EditIcon /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleGenerateKfImage(i)}
+                              disabled={kf.isGenerating}
+                              style={{
+                                fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                                border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                color: "var(--text-primary)", cursor: kf.isGenerating ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4
+                              }}
+                            >
+                              {kf.isGenerating ? <SpinnerIcon size={12} /> : <ImageIcon size={12} />}
+                              Generate
+                            </button>
+                          </div>
                         </div>
-                        <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+                        {editingKf === i ? (
+                          <div style={{ marginTop: 8 }}>
+                            <textarea
+                              value={editingKfText}
+                              onChange={(e) => setEditingKfText(e.target.value)}
+                              style={{
+                                width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                                borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+                                background: "var(--bg-primary)", color: "var(--text-primary)",
+                                fontFamily: "inherit", resize: "vertical",
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <button
+                                onClick={() => { setKeyframes((prev) => prev.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item)); setEditingKf(-1); }}
+                                style={{
+                                  padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
+                                  background: "var(--accent)", color: "#fff", cursor: "pointer",
+                                  fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                                }}
+                              >
+                                <CheckIcon /> Save
+                              </button>
+                              <button
+                                onClick={() => setEditingKf(-1)}
+                                style={{
+                                  padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                                  border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                  color: "var(--text-primary)", cursor: "pointer", fontSize: "0.8rem",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+                        )}
                       </div>
                     </div>
                   ))}
                   <RowFlex>
                     <PrimaryBtn onClick={() => handleNext("keyframes")} disabled={stepLoading === "keyframes"}>
                       {stepLoading === "keyframes" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
-                    </PrimaryBtn>
-                  </RowFlex>
-                </FieldBox>
-              </div>
-            )}
-
-            {/* STORYBOARD */}
-            {visibleSteps.includes("storyboard") && (
-              <div id="section-storyboard">
-                <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={(text) => handleEdit("storyboard", text)}>
-                  <ContentBg>{storyboard}</ContentBg>
-                  <RowFlex>
-                    <PrimaryBtn onClick={() => handleNext("storyboard")} disabled={stepLoading === "storyboard"}>
-                      {stepLoading === "storyboard" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
                     </PrimaryBtn>
                   </RowFlex>
                 </FieldBox>
@@ -1040,6 +1098,10 @@ function CurrentProject({ onOpenSettings }) {
 // ── Past Project Detail ─────────────────────────────────────────────────────────
 function PastProjectDetail({ project, onBack }) {
   const [editLoading, setEditLoading] = useState({});
+  const [localKeyframes, setLocalKeyframes] = useState(null);
+  const [editingKf, setEditingKf] = useState(-1);
+  const [editingKfText, setEditingKfText] = useState("");
+  const kf = localKeyframes ?? project.keyframes ?? [];
 
   const handleEdit = async (key) => {
     setEditLoading((prev) => ({ ...prev, [key]: true }));
@@ -1090,16 +1152,50 @@ function PastProjectDetail({ project, onBack }) {
         </div>
       </FieldBox>
 
-      <FieldBox label="Selected Marketing Hook" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
-        <p style={{ fontSize: "0.9rem", fontWeight: 500, fontStyle: "italic", color: "var(--text-primary)", fontFamily: "inherit" }}>"{project.selectedHook}"</p>
-      </FieldBox>
+      {project.marketingHooks?.length > 0 && (
+        <FieldBox label="Marketing Hooks (All Generated)" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {project.marketingHooks.map((h, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "flex-start", gap: 12,
+                padding: "10px 14px", borderRadius: "var(--radius-md)",
+                border: h === project.selectedHook ? "1.5px solid var(--accent)" : "1px solid var(--border-color)",
+                background: h === project.selectedHook ? "var(--bg-tertiary)" : "transparent",
+                fontSize: "0.875rem", lineHeight: 1.5,
+              }}>
+                <span style={{
+                  flexShrink: 0, width: 18, height: 18, borderRadius: "50%", marginTop: 2,
+                  background: h === project.selectedHook ? "var(--accent)" : "var(--border-color)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontSize: "0.65rem", fontWeight: 700,
+                }}>
+                  {h === project.selectedHook ? "✓" : i + 1}
+                </span>
+                <span style={{ color: "var(--text-primary)" }}>{h}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 10, fontFamily: "var(--font-mono)" }}>
+            ✓ <strong>Selected:</strong> "{project.selectedHook}"
+          </p>
+        </FieldBox>
+      )}
+      {(!project.marketingHooks || project.marketingHooks.length === 0) && project.selectedHook && (
+        <FieldBox label="Selected Marketing Hook" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
+          <p style={{ fontSize: "0.9rem", fontWeight: 500, fontStyle: "italic", color: "var(--text-primary)", fontFamily: "inherit" }}>"{project.selectedHook}"</p>
+        </FieldBox>
+      )}
 
       <FieldBox label="Script" loading={editLoading["script"]} onEdit={() => handleEdit("script")}>
         <ContentBg>{project.script}</ContentBg>
       </FieldBox>
 
+      <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={() => handleEdit("storyboard")}>
+        <ContentBg>{project.storyboard}</ContentBg>
+      </FieldBox>
+
       <FieldBox label="Keyframe Prompts" loading={editLoading["keyframes"]} onEdit={() => handleEdit("keyframes")}>
-        {project.keyframes.map((kf, i) => (
+        {kf.map((kfItem, i) => (
           <div key={i} style={{
             display: "flex", gap: 16, alignItems: "flex-start",
             background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
@@ -1114,16 +1210,69 @@ function PastProjectDetail({ project, onBack }) {
               <ImageIcon />
               <span style={{ fontSize: "0.65rem", marginTop: 4, fontFamily: "var(--font-mono)", fontWeight: 600 }}>Image</span>
             </div>
-            <div>
-              <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>Frame {i + 1}</span>
-              <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+                  Frame {i + 1}
+                </span>
+                {editingKf !== i && (
+                  <button
+                    onClick={() => { setEditingKf(i); setEditingKfText(kfItem.text); }}
+                    style={{
+                      fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                      color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+                    }}
+                  >
+                    <EditIcon /> Edit
+                  </button>
+                )}
+              </div>
+              {editingKf === i ? (
+                <div style={{ marginTop: 8 }}>
+                  <textarea
+                    value={editingKfText}
+                    onChange={(e) => setEditingKfText(e.target.value)}
+                    style={{
+                      width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                      borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+                      background: "var(--bg-primary)", color: "var(--text-primary)",
+                      fontFamily: "inherit", resize: "vertical",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button
+                      onClick={() => {
+                        const updated = kf.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item);
+                        setLocalKeyframes(updated);
+                        setEditingKf(-1);
+                      }}
+                      style={{
+                        padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
+                        background: "var(--accent)", color: "#fff", cursor: "pointer",
+                        fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                      }}
+                    >
+                      <CheckIcon /> Save
+                    </button>
+                    <button
+                      onClick={() => setEditingKf(-1)}
+                      style={{
+                        padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                        color: "var(--text-primary)", cursor: "pointer", fontSize: "0.8rem",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kfItem.text}</p>
+              )}
             </div>
           </div>
         ))}
-      </FieldBox>
-
-      <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={() => handleEdit("storyboard")}>
-        <ContentBg>{project.storyboard}</ContentBg>
       </FieldBox>
 
       <FieldBox label="Video Hook Prompt" loading={editLoading["videoHook"]} onEdit={() => handleEdit("videoHook")}>
@@ -1143,6 +1292,8 @@ function PastProjects() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -1158,6 +1309,25 @@ function PastProjects() {
     };
     fetchProjects();
   }, []);
+
+  const handleMigrate = async () => {
+    if (!window.confirm("Migrate all projects from Notion to PostgreSQL? Existing projects will be skipped.")) return;
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/migrate-from-notion`, { method: "POST" });
+      const data = await res.json();
+      setMigrateResult(data);
+      // Refresh projects list
+      const response = await fetch(`${API_BASE}/api/get-projects`);
+      const pdata = await response.json();
+      setProjects(pdata.projects || []);
+    } catch (err) {
+      setMigrateResult({ error: err.message });
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
@@ -1187,10 +1357,43 @@ function PastProjects() {
 
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px", height: "100%", overflowY: "auto" }}>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "inherit" }}>Past Projects</h2>
-        <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: 4 }}>{projects.length} project{projects.length !== 1 ? "s" : ""} found</p>
+      <div style={{ marginBottom: 24, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "inherit" }}>Past Projects</h2>
+          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: 4 }}>{projects.length} project{projects.length !== 1 ? "s" : ""} found</p>
+        </div>
+        <button
+          onClick={handleMigrate}
+          disabled={migrating}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.75rem", fontWeight: 600, fontFamily: "var(--font-mono)",
+            padding: "6px 12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+            background: migrating ? "var(--bg-tertiary)" : "transparent",
+            color: migrating ? "var(--text-muted)" : "var(--text-secondary)", cursor: migrating ? "not-allowed" : "pointer",
+          }}
+          title="Migrate existing projects from Notion to PostgreSQL"
+        >
+          {migrating ? <SpinnerIcon size={12} /> : "↻"} Migrate from Notion
+        </button>
       </div>
+      {migrateResult && (
+        <div style={{
+          marginBottom: 16, padding: "10px 16px", borderRadius: "var(--radius-md)",
+          background: migrateResult.error ? "#fef2f2" : "#f0fdf4",
+          border: migrateResult.error ? "1px solid #fecaca" : "1px solid #bbf7d0",
+          color: migrateResult.error ? "#b91c1c" : "#15803d", fontSize: "0.85rem",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <span>{migrateResult.error ? "✗" : "✓"}</span>
+          <span>
+            {migrateResult.error
+              ? `Migration failed: ${migrateResult.error}`
+              : `Migrated ${migrateResult.inserted} new project(s) from Notion (${migrateResult.skipped} already existed, ${migrateResult.total_in_notion} total in Notion).`
+            }
+          </span>
+          <button onClick={() => setMigrateResult(null)} style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", fontSize: "1rem", color: "inherit" }}>✕</button>
+        </div>
+      )}
       {projects.length === 0 ? (
         <div style={{
           textAlign: "center", padding: "60px 24px",
@@ -1302,6 +1505,7 @@ function MasterPromptsModal({ onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const uploadRefs = useRef({});
 
   useEffect(() => {
     fetch(`${API_BASE}/api/prompts`)
@@ -1373,9 +1577,39 @@ function MasterPromptsModal({ onClose }) {
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
                 Customize the instructions sent to the AI for each generation step. Variables and output formatting rules are automatically appended by the system.
               </p>
-              {["hooks", "script", "keyframes", "storyboard", "videoHook", "videoSpeak"].map(key => (
+              {["hooks", "script", "storyboard", "keyframes", "videoHook", "videoSpeak"].map(key => (
                 <div key={key}>
-                  <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <label style={{ ...labelStyle, marginBottom: 0 }}>{FIELD_LABELS[key] || key}</label>
+                    <button
+                      onClick={() => uploadRefs.current[key]?.click()}
+                      title="Upload .md file"
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        fontSize: "0.7rem", padding: "3px 8px", borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border-color)", background: "transparent",
+                        color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      <UploadIcon /> Upload .md
+                    </button>
+                    <input
+                      ref={(el) => uploadRefs.current[key] = el}
+                      type="file"
+                      accept=".md,.txt"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setPrompts((prev) => ({ ...prev, [key]: ev.target?.result || "" }));
+                        };
+                        reader.readAsText(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
                   <textarea
                     value={prompts[key] || ""}
                     onChange={(e) => setPrompts({ ...prompts, [key]: e.target.value })}

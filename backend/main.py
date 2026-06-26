@@ -128,7 +128,7 @@ class KeyframeItem(BaseModel):
 
 class GenerateStoryboardRequest(BaseModel):
     projectId: str
-    keyframes: List[KeyframeItem]
+    keyframes: List[KeyframeItem] = []
     script: str
     selectedHook: str
     hook: str
@@ -347,8 +347,8 @@ def update_prompts_api(req: Dict[str, str]):
 
 @app.post("/api/generate-hooks")
 async def generate_hooks(req: GenerateHooksRequest):
-    # 1. Create a database page
-    project_id = await create_notion_page(req.hook, req.tone, req.audience)
+    # 1. Create project in PostgreSQL
+    project_id = create_project_in_db(req.hook, req.tone, req.audience)
     
     # 2. Run LLM to generate 10 hooks
     master_prompts = get_prompts()
@@ -364,11 +364,8 @@ Return output matching this JSON schema exactly:
     response_json = generate_json(prompt)
     hooks = response_json.get("marketing_hooks", [])
     
-    # 3. Format and update page in Notion
-    formatted_hooks = "\n\n".join([f"{i + 1}. {h}" for i, h in enumerate(hooks)])
-    await update_notion_page(project_id, {
-        "Marketing Hooks": to_rich_text_property(formatted_hooks)
-    })
+    # 3. Save all hooks to PostgreSQL
+    update_project_in_db(project_id, marketing_hooks=hooks)
     
     return {
         "marketingHooks": hooks,
@@ -409,11 +406,8 @@ Return output matching this JSON schema exactly:
     response_json = generate_json(prompt)
     script = response_json.get("script", "")
     
-    # Update Notion
-    await update_notion_page(req.projectId, {
-        "Speaking Script Final": to_rich_text_property(script),
-        "Selected One-liner": to_rich_text_property(req.selectedHook)
-    })
+    # Update PostgreSQL
+    update_project_in_db(req.projectId, script=script, selected_hook=req.selectedHook)
     
     return {
         "script": script
@@ -475,13 +469,14 @@ Return output matching this JSON schema exactly:
     response_json = generate_json(prompt)
     keyframes_list = response_json.get("keyframes", [])
     
-    # Format keyframe string as expected by client: "• Keyframe 1\ntext\n\n• Keyframe 2..."
+    # Build JSON array for PostgreSQL storage
+    kf_items = [{"text": kf.get("text", ""), "image": None} for kf in keyframes_list]
+    
+    # Also format string for frontend compatibility
     formatted_keyframes = "\n\n".join([f"• Keyframe {i + 1}\n{kf.get('text', '')}" for i, kf in enumerate(keyframes_list)])
     
-    # Update Notion
-    await update_notion_page(req.projectId, {
-        "Keyframe Prompts": to_rich_text_property(formatted_keyframes)
-    })
+    # Update PostgreSQL
+    update_project_in_db(req.projectId, keyframes=kf_items)
     
     return {
         "keyframes": formatted_keyframes
@@ -490,9 +485,10 @@ Return output matching this JSON schema exactly:
 
 @app.post("/api/generate-storyboard-prompt")
 async def generate_storyboard_prompt(req: GenerateStoryboardRequest):
-    keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes])
+    keyframes_str = "\n".join([f"- {kf.text}" for kf in req.keyframes]) if req.keyframes else ""
     
     master_prompts = get_prompts()
+    keyframes_section = f"\nKeyframes:\n{keyframes_str}\n" if keyframes_str else ""
     prompt = f"""You are a cinematic AI commercial director creating a hyper-realistic vertical storyboard for Higgsfield AI video generation.
 
 The storyboard is for a premium advertising reel promoting:
@@ -516,10 +512,7 @@ Speaking Script:
 
 Selected Hook:
 {req.selectedHook}
-
-Keyframes:
-{keyframes_str}
-
+{keyframes_section}
 Tone:
 {req.tone}
 
@@ -568,10 +561,8 @@ Do not wrap in markdown.
     response_json = generate_json(prompt)
     storyboard = response_json.get("storyboard", "")
     
-    # Update Notion
-    await update_notion_page(req.projectId, {
-        "Storyboard Prompt": to_rich_text_property(storyboard)
-    })
+    # Update PostgreSQL
+    update_project_in_db(req.projectId, storyboard=storyboard)
     
     return {
         "storyboard": storyboard
@@ -649,10 +640,8 @@ Return output matching this JSON schema exactly:
     response_json = generate_json(prompt)
     video_hook = response_json.get("videoHookPrompt", "")
     
-    # Update Notion
-    await update_notion_page(req.projectId, {
-        "Video Prompt Hook Part": to_rich_text_property(video_hook)
-    })
+    # Update PostgreSQL
+    update_project_in_db(req.projectId, video_hook=video_hook)
     
     return {
         "videoHookPrompt": video_hook
@@ -689,10 +678,8 @@ Return output matching this JSON schema exactly:
     response_json = generate_json(prompt)
     video_speak = response_json.get("script", "")
     
-    # Update Notion
-    await update_notion_page(req.projectId, {
-        "Video Prompt Speaking Part": to_rich_text_property(video_speak)
-    })
+    # Update PostgreSQL
+    update_project_in_db(req.projectId, video_speak=video_speak)
     
     return {
         "videoSpeakingPrompt": video_speak
@@ -713,31 +700,37 @@ Modify ONLY according to the user request.
     # Non-structured response from Gemini
     updated_content = _call_gemini(prompt, as_json=False)
         
-    # Update in Notion based on the section index
+    # Update in PostgreSQL based on the section index
     columns = {
-        0: "Marketing Hooks",
-        1: "Speaking Script Final",
-        2: "Keyframe Prompts",
-        3: "Storyboard Prompt",
-        4: "Video Prompt Hook Part",
-        5: "Video Prompt Speaking Part"
+        0: "marketing_hooks",
+        1: "script",
+        2: "storyboard",
+        3: "keyframes",
+        4: "video_hook",
+        5: "video_speak"
     }
     
     col_name = columns.get(req.section)
     if not col_name:
         raise HTTPException(status_code=400, detail="Invalid section ID")
-        
-    await update_notion_page(req.projectId, {
-        col_name: to_rich_text_property(updated_content)
-    })
+    
+    # Convert edited string back to proper type for each column
+    if col_name == "marketing_hooks":
+        # Split by newlines, filter empty
+        updated_value = [line.strip() for line in updated_content.split("\n") if line.strip()]
+    elif col_name == "keyframes":
+        # Split by bullet and rebuild keyframe objects
+        parts = updated_content.split("• ")
+        updated_value = [{"text": p.strip(), "image": None} for p in parts if p.strip()]
+    else:
+        updated_value = updated_content
+    
+    update_project_in_db(req.projectId, **{col_name: updated_value})
     
     return {
         "updatedContent": updated_content
     }
 
-
-import base64
-import traceback
 
 class GenerateImageRequest(BaseModel):
     prompt: str
@@ -992,9 +985,9 @@ def get_db_conn():
     return psycopg.connect(DATABASE_URL)
 
 def init_db():
-    """Create the feedback table if it doesn't exist (uses JSONB for embeddings)."""
+    """Create the feedback + projects tables."""
     if not DATABASE_URL:
-        logger.warning("DATABASE_URL is not set – media review persistence is disabled.")
+        logger.warning("DATABASE_URL is not set – media review / project persistence is disabled.")
         return
     try:
         conn = get_db_conn()
@@ -1009,9 +1002,26 @@ def init_db():
                     embedding JSONB
                 );
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    hook TEXT DEFAULT '',
+                    tone TEXT DEFAULT '',
+                    audience TEXT DEFAULT '',
+                    marketing_hooks JSONB DEFAULT '[]'::jsonb,
+                    selected_hook TEXT DEFAULT '',
+                    script TEXT DEFAULT '',
+                    keyframes JSONB DEFAULT '[]'::jsonb,
+                    storyboard TEXT DEFAULT '',
+                    video_hook TEXT DEFAULT '',
+                    video_speak TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+            """)
         conn.commit()
         conn.close()
-        logger.info("PostgreSQL media_feedback table ready.")
+        logger.info("PostgreSQL tables ready (media_feedback + projects).")
     except Exception as e:
         logger.error(f"DB init failed: {e}")
 
@@ -1086,6 +1096,162 @@ def save_image_to_supabase(
         logger.error(f"Supabase image save failed ({source}): {e}")
         return None
 
+
+# ==========================================
+# PROJECT CRUD (PostgreSQL, replacing Notion)
+# ==========================================
+
+ALLOWED_PROJECT_FIELDS = {
+    "hook", "tone", "audience", "marketing_hooks", "selected_hook",
+    "script", "storyboard", "keyframes", "video_hook", "video_speak"
+}
+
+
+def create_project_in_db(hook: str, tone: str, audience: str) -> str:
+    """Create a new project in PostgreSQL and return its UUID."""
+    project_id = str(uuid.uuid4())
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO projects (id, hook, tone, audience) VALUES (%s, %s, %s, %s)""",
+                (project_id, hook, tone, audience)
+            )
+        conn.commit()
+        logger.info(f"Created project {project_id}")
+        return project_id
+    except Exception as e:
+        logger.error(f"Failed to create project: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+    finally:
+        conn.close()
+
+
+def update_project_in_db(project_id: str, **kwargs):
+    """Update project fields in PostgreSQL (whitelist-protected)."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
+    filtered = {k: v for k, v in kwargs.items() if k in ALLOWED_PROJECT_FIELDS}
+    if not filtered:
+        return
+    # Convert lists/dicts to JSON strings for JSONB columns
+    vals = []
+    for k, v in filtered.items():
+        if isinstance(v, (list, dict)):
+            vals.append(json.dumps(v))
+        else:
+            vals.append(v)
+    sets = ", ".join(f"{k} = %s" for k in filtered)
+    sets += ", updated_at = NOW()"
+    vals.append(project_id)
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE projects SET {sets} WHERE id = %s", vals)
+            if cur.rowcount == 0:
+                logger.warning(f"Project {project_id} not found for update")
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to update project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update project: {str(e)}")
+    finally:
+        conn.close()
+
+
+def get_project_from_db(project_id: str) -> Optional[dict]:
+    """Fetch a single project by ID."""
+    if not DATABASE_URL:
+        return None
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return _row_to_project(cur, row)
+    except Exception as e:
+        logger.error(f"Failed to fetch project {project_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def _compute_status(p: dict) -> str:
+    """Derive a human-readable status from which fields are filled."""
+    if p.get("video_speak"):  return "Complete"
+    if p.get("video_hook"):   return "Video Hook"
+    if p.get("keyframes"):    return "Keyframes"
+    if p.get("storyboard"):   return "Storyboard"
+    if p.get("script"):       return "Script"
+    if p.get("selected_hook"):return "Hook Selected"
+    return "Draft"
+
+
+def _row_to_project(cur, row) -> dict:
+    """Convert a psycopg row to the project dict expected by the frontend."""
+    col_names = [desc[0] for desc in cur.description]
+    p = dict(zip(col_names, row))
+    # Ensure JSONB fields are parsed
+    for field in ("marketing_hooks", "keyframes"):
+        if isinstance(p.get(field), str):
+            p[field] = json.loads(p[field])
+        elif p.get(field) is None:
+            p[field] = [] if field == "marketing_hooks" else []
+    # Frontend-compatible field names
+    created = p.get("created_at")
+    return {
+        "id": p["id"],
+        "title": p.get("hook", ""),
+        "hook": p.get("hook", ""),
+        "tone": p.get("tone", ""),
+        "audience": p.get("audience", ""),
+        "selectedHook": p.get("selected_hook", ""),
+        "script": p.get("script", ""),
+        "marketingHooks": p.get("marketing_hooks") or [],
+        "keyframes": p.get("keyframes") or [],
+        "storyboard": p.get("storyboard", ""),
+        "videoHook": p.get("video_hook", ""),
+        "videoSpeak": p.get("video_speak", ""),
+        "date": created.isoformat() if created else "",
+        "status": _compute_status(p),
+    }
+
+
+def get_all_projects_from_db() -> list:
+    """Return all projects, newest first."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM projects ORDER BY created_at DESC")
+            rows = cur.fetchall()
+            projects = [_row_to_project(cur, row) for row in rows]
+        return projects
+    except Exception as e:
+        logger.error(f"Failed to list projects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+def delete_project_from_db(project_id: str):
+    """Delete a project by ID."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to delete project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 class CaptureFeedbackRequest(BaseModel):
@@ -1586,96 +1752,109 @@ async def search_images(req: SearchImagesRequest):
 
 @app.get("/api/get-projects")
 async def get_projects():
-    if not NOTION_API_KEY:
-        raise HTTPException(status_code=500, detail="NOTION_API_KEY is not configured on the server.")
-        
-    url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(url, headers=notion_headers, json={})
-            r.raise_for_status()
-            results = r.json().get("results", [])
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Notion Database Query Error: {e.response.status_code} - {e.response.text}")
-            raise HTTPException(status_code=502, detail=f"Notion returned error: {e.response.text}")
-        except Exception as e:
-            logger.error(f"Notion connection error: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to connect to Notion: {str(e)}")
-            
-    projects = []
-    for page in results:
-        properties = page.get("properties", {})
-        pid = page.get("id")
-        
-        title = get_title(properties, "Hooks") or "Untitled"
-        hook = get_title(properties, "Hooks")
-        tone = get_rich_text(properties, "Tone")
-        audience = get_rich_text(properties, "Audience")
-        selected_hook = get_rich_text(properties, "Selected One-liner")
-        script = get_rich_text(properties, "Speaking Script Final")
-        
-        # Marketing Hooks splitting logic
-        marketing_hooks_str = get_rich_text(properties, "Marketing Hooks")
-        marketing_hooks = []
-        if marketing_hooks_str:
-            s = marketing_hooks_str.strip()
-            # Remove leading numbers if present, e.g. "1. Hook" -> "Hook"
-            if re.match(r'^\d+\.\s', s):
-                s = re.sub(r'^\d+\.\s', '', s)
-            parts = re.split(r'\n+\d+\.\s', s)
-            marketing_hooks = [p.strip() for p in parts if p.strip()]
-            
-        # Keyframe splitting logic
-        keyframes_str = get_rich_text(properties, "Keyframe Prompts")
-        keyframes = []
-        if keyframes_str:
-            parts = keyframes_str.split("• ")
-            keyframes = [{"text": p.strip(), "image": None} for p in parts if p.strip()]
-            
-        storyboard = get_rich_text(properties, "Storyboard Prompt")
-        video_hook = get_rich_text(properties, "Video Prompt Hook Part")
-        video_speak = get_rich_text(properties, "Video Prompt Speaking Part")
-        
-        projects.append({
-            "id": pid,
-            "title": title,
-            "hook": hook,
-            "tone": tone,
-            "audience": audience,
-            "selectedHook": selected_hook,
-            "script": script,
-            "marketingHooks": marketing_hooks,
-            "keyframes": keyframes,
-            "storyboard": storyboard,
-            "videoHook": video_hook,
-            "videoSpeak": video_speak
-        })
-        
-    return {
-        "projects": projects
-    }
+    projects = get_all_projects_from_db()
+    return {"projects": projects}
 
 
 @app.delete("/api/delete-project/{project_id}")
 async def delete_project(project_id: str):
+    delete_project_from_db(project_id)
+    return {"success": True}
+
+
+# ==========================================
+# MIGRATION: Notion → PostgreSQL
+# ==========================================
+
+@app.post("/api/migrate-from-notion")
+async def migrate_from_notion():
+    """
+    One-off migration: read all projects from Notion and insert into PostgreSQL.
+    Safe to call multiple times — skips projects that already exist by id.
+    """
     if not NOTION_API_KEY:
         raise HTTPException(status_code=500, detail="NOTION_API_KEY is not configured on the server.")
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured on the server.")
 
-    url = f"https://api.notion.com/v1/pages/{project_id}"
-    body = {"archived": True}
-
+    url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.patch(url, headers=notion_headers, json=body)
+            r = await client.post(url, headers=notion_headers, json={})
             r.raise_for_status()
-            return {"success": True}
+            pages = r.json().get("results", [])
         except httpx.HTTPStatusError as e:
-            logger.error(f"Notion Delete Error: {e.response.status_code} - {e.response.text}")
-            raise HTTPException(status_code=502, detail=f"Notion returned error: {e.response.text}")
+            raise HTTPException(status_code=502, detail=f"Notion query error: {e.response.text}")
         except Exception as e:
-            logger.error(f"Notion connection error: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to connect to Notion: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Notion connection error: {str(e)}")
+
+    inserted = 0
+    skipped = 0
+    conn = get_db_conn()
+
+    for page in pages:
+        pid = page.get("id")
+        # Check if already migrated
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM projects WHERE id = %s", (pid,))
+            if cur.fetchone():
+                skipped += 1
+                continue
+
+        props = page.get("properties", {})
+        hook = get_title(props, "Hooks") or ""
+        tone = get_rich_text(props, "Tone")
+        audience = get_rich_text(props, "Audience")
+        selected_hook = get_rich_text(props, "Selected One-liner")
+        script = get_rich_text(props, "Speaking Script Final")
+
+        # Parse marketing hooks
+        mh_str = get_rich_text(props, "Marketing Hooks")
+        marketing_hooks = []
+        if mh_str:
+            s = mh_str.strip()
+            if re.match(r'^\d+\.\s', s):
+                s = re.sub(r'^\d+\.\s', '', s)
+            parts = re.split(r'\n+\d+\.\s', s)
+            marketing_hooks = [p.strip() for p in parts if p.strip()]
+
+        # Parse keyframes
+        kf_str = get_rich_text(props, "Keyframe Prompts")
+        keyframes = []
+        if kf_str:
+            parts = kf_str.split("• ")
+            keyframes = [{"text": p.strip(), "image": None} for p in parts if p.strip()]
+
+        storyboard = get_rich_text(props, "Storyboard Prompt")
+        video_hook = get_rich_text(props, "Video Prompt Hook Part")
+        video_speak = get_rich_text(props, "Video Prompt Speaking Part")
+
+        created_raw = page.get("created_time")
+
+        try:
+            with conn.cursor() as cur:
+                if created_raw:
+                    cur.execute(
+                        """INSERT INTO projects (id, hook, tone, audience, marketing_hooks, selected_hook, script, keyframes, storyboard, video_hook, video_speak, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)""",
+                        (pid, hook, tone, audience, json.dumps(marketing_hooks), selected_hook, script,
+                         json.dumps(keyframes), storyboard, video_hook, video_speak, created_raw)
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO projects (id, hook, tone, audience, marketing_hooks, selected_hook, script, keyframes, storyboard, video_hook, video_speak, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                        (pid, hook, tone, audience, json.dumps(marketing_hooks), selected_hook, script,
+                         json.dumps(keyframes), storyboard, video_hook, video_speak)
+                    )
+            conn.commit()
+            inserted += 1
+        except Exception as e:
+            logger.error(f"Migration insert failed for {pid}: {e}")
+            conn.rollback()
+
+    conn.close()
+    return {"status": "success", "inserted": inserted, "skipped": skipped, "total_in_notion": len(pages)}
 
 
 
