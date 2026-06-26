@@ -508,6 +508,8 @@ function CurrentProject({ onOpenSettings }) {
   const [projectId, setProjectId] = useState("");
   const [stepLoading, setStepLoading] = useState(null);
   const [editLoading, setEditLoading] = useState({});
+  const [editingKf, setEditingKf] = useState(-1);
+  const [editingKfText, setEditingKfText] = useState("");
   const fileRef = useRef(null);
   const bottomRef = useRef(null); // kept for compatibility
 
@@ -947,20 +949,69 @@ function CurrentProject({ onOpenSettings }) {
                           <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
                             Frame {i + 1}
                           </span>
-                          <button
-                            onClick={() => handleGenerateKfImage(i)}
-                            disabled={kf.isGenerating}
-                            style={{
-                              fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
-                              border: "1px solid var(--border-color)", background: "var(--bg-primary)",
-                              color: "var(--text-primary)", cursor: kf.isGenerating ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4
-                            }}
-                          >
-                            {kf.isGenerating ? <SpinnerIcon size={12} /> : <ImageIcon size={12} />}
-                            Generate
-                          </button>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              onClick={() => { setEditingKf(i); setEditingKfText(kf.text); }}
+                              style={{
+                                fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                                border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+                              }}
+                            >
+                              <EditIcon /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleGenerateKfImage(i)}
+                              disabled={kf.isGenerating}
+                              style={{
+                                fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                                border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                color: "var(--text-primary)", cursor: kf.isGenerating ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4
+                              }}
+                            >
+                              {kf.isGenerating ? <SpinnerIcon size={12} /> : <ImageIcon size={12} />}
+                              Generate
+                            </button>
+                          </div>
                         </div>
-                        <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+                        {editingKf === i ? (
+                          <div style={{ marginTop: 8 }}>
+                            <textarea
+                              value={editingKfText}
+                              onChange={(e) => setEditingKfText(e.target.value)}
+                              style={{
+                                width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                                borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+                                background: "var(--bg-primary)", color: "var(--text-primary)",
+                                fontFamily: "inherit", resize: "vertical",
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <button
+                                onClick={() => { setKeyframes((prev) => prev.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item)); setEditingKf(-1); }}
+                                style={{
+                                  padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
+                                  background: "var(--accent)", color: "#fff", cursor: "pointer",
+                                  fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                                }}
+                              >
+                                <CheckIcon /> Save
+                              </button>
+                              <button
+                                onClick={() => setEditingKf(-1)}
+                                style={{
+                                  padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                                  border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                                  color: "var(--text-primary)", cursor: "pointer", fontSize: "0.8rem",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1040,6 +1091,10 @@ function CurrentProject({ onOpenSettings }) {
 // ── Past Project Detail ─────────────────────────────────────────────────────────
 function PastProjectDetail({ project, onBack }) {
   const [editLoading, setEditLoading] = useState({});
+  const [localKeyframes, setLocalKeyframes] = useState(null);
+  const [editingKf, setEditingKf] = useState(-1);
+  const [editingKfText, setEditingKfText] = useState("");
+  const kf = localKeyframes ?? project.keyframes ?? [];
 
   const handleEdit = async (key) => {
     setEditLoading((prev) => ({ ...prev, [key]: true }));
@@ -1133,7 +1188,7 @@ function PastProjectDetail({ project, onBack }) {
       </FieldBox>
 
       <FieldBox label="Keyframe Prompts" loading={editLoading["keyframes"]} onEdit={() => handleEdit("keyframes")}>
-        {project.keyframes.map((kf, i) => (
+        {kf.map((kfItem, i) => (
           <div key={i} style={{
             display: "flex", gap: 16, alignItems: "flex-start",
             background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
@@ -1148,9 +1203,66 @@ function PastProjectDetail({ project, onBack }) {
               <ImageIcon />
               <span style={{ fontSize: "0.65rem", marginTop: 4, fontFamily: "var(--font-mono)", fontWeight: 600 }}>Image</span>
             </div>
-            <div>
-              <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>Frame {i + 1}</span>
-              <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kf.text}</p>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+                  Frame {i + 1}
+                </span>
+                {editingKf !== i && (
+                  <button
+                    onClick={() => { setEditingKf(i); setEditingKfText(kfItem.text); }}
+                    style={{
+                      fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                      color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+                    }}
+                  >
+                    <EditIcon /> Edit
+                  </button>
+                )}
+              </div>
+              {editingKf === i ? (
+                <div style={{ marginTop: 8 }}>
+                  <textarea
+                    value={editingKfText}
+                    onChange={(e) => setEditingKfText(e.target.value)}
+                    style={{
+                      width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                      borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+                      background: "var(--bg-primary)", color: "var(--text-primary)",
+                      fontFamily: "inherit", resize: "vertical",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button
+                      onClick={() => {
+                        const updated = kf.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item);
+                        setLocalKeyframes(updated);
+                        setEditingKf(-1);
+                      }}
+                      style={{
+                        padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
+                        background: "var(--accent)", color: "#fff", cursor: "pointer",
+                        fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                      }}
+                    >
+                      <CheckIcon /> Save
+                    </button>
+                    <button
+                      onClick={() => setEditingKf(-1)}
+                      style={{
+                        padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border-color)", background: "var(--bg-primary)",
+                        color: "var(--text-primary)", cursor: "pointer", fontSize: "0.8rem",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "var(--text-primary)", marginTop: 4, fontFamily: "inherit" }}>{kfItem.text}</p>
+              )}
             </div>
           </div>
         ))}
