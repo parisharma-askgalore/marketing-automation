@@ -1090,9 +1090,39 @@ function PastProjectDetail({ project, onBack }) {
         </div>
       </FieldBox>
 
-      <FieldBox label="Selected Marketing Hook" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
-        <p style={{ fontSize: "0.9rem", fontWeight: 500, fontStyle: "italic", color: "var(--text-primary)", fontFamily: "inherit" }}>"{project.selectedHook}"</p>
-      </FieldBox>
+      {project.marketingHooks?.length > 0 && (
+        <FieldBox label="Marketing Hooks (All Generated)" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {project.marketingHooks.map((h, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "flex-start", gap: 12,
+                padding: "10px 14px", borderRadius: "var(--radius-md)",
+                border: h === project.selectedHook ? "1.5px solid var(--accent)" : "1px solid var(--border-color)",
+                background: h === project.selectedHook ? "var(--bg-tertiary)" : "transparent",
+                fontSize: "0.875rem", lineHeight: 1.5,
+              }}>
+                <span style={{
+                  flexShrink: 0, width: 18, height: 18, borderRadius: "50%", marginTop: 2,
+                  background: h === project.selectedHook ? "var(--accent)" : "var(--border-color)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontSize: "0.65rem", fontWeight: 700,
+                }}>
+                  {h === project.selectedHook ? "✓" : i + 1}
+                </span>
+                <span style={{ color: "var(--text-primary)" }}>{h}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 10, fontFamily: "var(--font-mono)" }}>
+            ✓ <strong>Selected:</strong> "{project.selectedHook}"
+          </p>
+        </FieldBox>
+      )}
+      {(!project.marketingHooks || project.marketingHooks.length === 0) && project.selectedHook && (
+        <FieldBox label="Selected Marketing Hook" loading={editLoading["hook"]} onEdit={() => handleEdit("hook")}>
+          <p style={{ fontSize: "0.9rem", fontWeight: 500, fontStyle: "italic", color: "var(--text-primary)", fontFamily: "inherit" }}>"{project.selectedHook}"</p>
+        </FieldBox>
+      )}
 
       <FieldBox label="Script" loading={editLoading["script"]} onEdit={() => handleEdit("script")}>
         <ContentBg>{project.script}</ContentBg>
@@ -1143,6 +1173,8 @@ function PastProjects() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -1158,6 +1190,25 @@ function PastProjects() {
     };
     fetchProjects();
   }, []);
+
+  const handleMigrate = async () => {
+    if (!window.confirm("Migrate all projects from Notion to PostgreSQL? Existing projects will be skipped.")) return;
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/migrate-from-notion`, { method: "POST" });
+      const data = await res.json();
+      setMigrateResult(data);
+      // Refresh projects list
+      const response = await fetch(`${API_BASE}/api/get-projects`);
+      const pdata = await response.json();
+      setProjects(pdata.projects || []);
+    } catch (err) {
+      setMigrateResult({ error: err.message });
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
@@ -1187,10 +1238,43 @@ function PastProjects() {
 
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 80px", height: "100%", overflowY: "auto" }}>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "inherit" }}>Past Projects</h2>
-        <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: 4 }}>{projects.length} project{projects.length !== 1 ? "s" : ""} found</p>
+      <div style={{ marginBottom: 24, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "inherit" }}>Past Projects</h2>
+          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: 4 }}>{projects.length} project{projects.length !== 1 ? "s" : ""} found</p>
+        </div>
+        <button
+          onClick={handleMigrate}
+          disabled={migrating}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.75rem", fontWeight: 600, fontFamily: "var(--font-mono)",
+            padding: "6px 12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
+            background: migrating ? "var(--bg-tertiary)" : "transparent",
+            color: migrating ? "var(--text-muted)" : "var(--text-secondary)", cursor: migrating ? "not-allowed" : "pointer",
+          }}
+          title="Migrate existing projects from Notion to PostgreSQL"
+        >
+          {migrating ? <SpinnerIcon size={12} /> : "↻"} Migrate from Notion
+        </button>
       </div>
+      {migrateResult && (
+        <div style={{
+          marginBottom: 16, padding: "10px 16px", borderRadius: "var(--radius-md)",
+          background: migrateResult.error ? "#fef2f2" : "#f0fdf4",
+          border: migrateResult.error ? "1px solid #fecaca" : "1px solid #bbf7d0",
+          color: migrateResult.error ? "#b91c1c" : "#15803d", fontSize: "0.85rem",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <span>{migrateResult.error ? "✗" : "✓"}</span>
+          <span>
+            {migrateResult.error
+              ? `Migration failed: ${migrateResult.error}`
+              : `Migrated ${migrateResult.inserted} new project(s) from Notion (${migrateResult.skipped} already existed, ${migrateResult.total_in_notion} total in Notion).`
+            }
+          </span>
+          <button onClick={() => setMigrateResult(null)} style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", fontSize: "1rem", color: "inherit" }}>✕</button>
+        </div>
+      )}
       {projects.length === 0 ? (
         <div style={{
           textAlign: "center", padding: "60px 24px",
