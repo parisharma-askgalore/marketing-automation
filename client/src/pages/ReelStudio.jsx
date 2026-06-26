@@ -106,6 +106,13 @@ const TrashIcon = () => (
     <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
+const UploadIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
 
 // ── Shared Buttons ─────────────────────────────────────────────────────────────
 function PrimaryBtn({ children, onClick, disabled }) {
@@ -1498,6 +1505,7 @@ function MasterPromptsModal({ onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const uploadRefs = useRef({});
 
   useEffect(() => {
     fetch(`${API_BASE}/api/prompts`)
@@ -1571,7 +1579,37 @@ function MasterPromptsModal({ onClose }) {
               </p>
               {["hooks", "script", "storyboard", "keyframes", "videoHook", "videoSpeak"].map(key => (
                 <div key={key}>
-                  <label style={labelStyle}>{FIELD_LABELS[key] || key}</label>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <label style={{ ...labelStyle, marginBottom: 0 }}>{FIELD_LABELS[key] || key}</label>
+                    <button
+                      onClick={() => uploadRefs.current[key]?.click()}
+                      title="Upload .md file"
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        fontSize: "0.7rem", padding: "3px 8px", borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border-color)", background: "transparent",
+                        color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      <UploadIcon /> Upload .md
+                    </button>
+                    <input
+                      ref={(el) => uploadRefs.current[key] = el}
+                      type="file"
+                      accept=".md,.txt"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setPrompts((prev) => ({ ...prev, [key]: ev.target?.result || "" }));
+                        };
+                        reader.readAsText(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
                   <textarea
                     value={prompts[key] || ""}
                     onChange={(e) => setPrompts({ ...prompts, [key]: e.target.value })}
