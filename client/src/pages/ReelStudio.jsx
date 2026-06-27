@@ -524,6 +524,7 @@ function CurrentProject({ onOpenSettings }) {
   const [editLoading, setEditLoading] = useState({});
   const [editingKf, setEditingKf] = useState(-1);
   const [editingKfText, setEditingKfText] = useState("");
+  const [kfEditLoading, setKfEditLoading] = useState(false);
   const fileRef = useRef(null);
   const bottomRef = useRef(null);
   const scrollRef = useRef(null);
@@ -728,6 +729,32 @@ function CurrentProject({ onOpenSettings }) {
       console.error(err);
     } finally {
       setEditLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleEditKeyframe = async (index, instruction) => {
+    if (!instruction.trim()) return;
+    try {
+      setKfEditLoading(true);
+      const response = await fetch(`${API_BASE}/api/edit-keyframe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          index,
+          currentText: keyframes[index]?.text || "",
+          editInstruction: instruction,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to edit keyframe");
+      const data = await response.json();
+      setKeyframes((prev) => prev.map((item, idx) => idx === index ? { ...item, text: data.updatedText } : item));
+      setEditingKf(-1);
+      setEditingKfText("");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setKfEditLoading(false);
     }
   };
 
@@ -972,7 +999,7 @@ function CurrentProject({ onOpenSettings }) {
                           </span>
                           <div style={{ display: "flex", gap: 4 }}>
                             <button
-                              onClick={() => { setEditingKf(i); setEditingKfText(kf.text); }}
+                              onClick={() => { setEditingKf(i); setEditingKfText(""); }}
                               style={{
                                 fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
                                 border: "1px solid var(--border-color)", background: "var(--bg-primary)",
@@ -997,29 +1024,34 @@ function CurrentProject({ onOpenSettings }) {
                         </div>
                         {editingKf === i ? (
                           <div style={{ marginTop: 8 }}>
-                            <textarea
+                            <input
                               value={editingKfText}
                               onChange={(e) => setEditingKfText(e.target.value)}
+                              placeholder="Describe what to change in this keyframe…"
                               style={{
-                                width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                                width: "100%", padding: "8px 12px", fontSize: "0.85rem",
                                 borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
                                 background: "var(--bg-primary)", color: "var(--text-primary)",
-                                fontFamily: "inherit", resize: "vertical",
+                                fontFamily: "inherit", boxSizing: "border-box",
                               }}
                             />
                             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                               <button
-                                onClick={() => { setKeyframes((prev) => prev.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item)); setEditingKf(-1); }}
+                                onClick={() => handleEditKeyframe(i, editingKfText)}
+                                disabled={kfEditLoading || !editingKfText.trim()}
                                 style={{
                                   padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
                                   background: "var(--accent)", color: "#fff", cursor: "pointer",
                                   fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                                  opacity: (kfEditLoading || !editingKfText.trim()) ? 0.6 : 1,
                                 }}
                               >
-                                <CheckIcon /> Save
+                                {kfEditLoading ? <SpinnerIcon size={12} /> : <SendIcon />}
+                                {kfEditLoading ? "Editing…" : "Send"}
                               </button>
                               <button
                                 onClick={() => setEditingKf(-1)}
+                                disabled={kfEditLoading}
                                 style={{
                                   padding: "4px 12px", borderRadius: "var(--radius-sm)",
                                   border: "1px solid var(--border-color)", background: "var(--bg-primary)",
@@ -1115,7 +1147,35 @@ function PastProjectDetail({ project, onBack }) {
   const [localKeyframes, setLocalKeyframes] = useState(null);
   const [editingKf, setEditingKf] = useState(-1);
   const [editingKfText, setEditingKfText] = useState("");
+  const [kfEditLoading, setKfEditLoading] = useState(false);
   const kf = localKeyframes ?? project.keyframes ?? [];
+
+  const handleEditKeyframe = async (index, instruction) => {
+    if (!instruction.trim()) return;
+    try {
+      setKfEditLoading(true);
+      const response = await fetch(`${API_BASE}/api/edit-keyframe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          index,
+          currentText: kf[index]?.text || "",
+          editInstruction: instruction,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to edit keyframe");
+      const data = await response.json();
+      const updated = kf.map((item, idx) => idx === index ? { ...item, text: data.updatedText } : item);
+      setLocalKeyframes(updated);
+      setEditingKf(-1);
+      setEditingKfText("");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setKfEditLoading(false);
+    }
+  };
 
   const handleEdit = async (key) => {
     setEditLoading((prev) => ({ ...prev, [key]: true }));
@@ -1231,7 +1291,7 @@ function PastProjectDetail({ project, onBack }) {
                 </span>
                 {editingKf !== i && (
                   <button
-                    onClick={() => { setEditingKf(i); setEditingKfText(kfItem.text); }}
+                    onClick={() => { setEditingKf(i); setEditingKfText(""); }}
                     style={{
                       fontSize: "0.7rem", padding: "4px 8px", borderRadius: "var(--radius-sm)",
                       border: "1px solid var(--border-color)", background: "var(--bg-primary)",
@@ -1244,33 +1304,34 @@ function PastProjectDetail({ project, onBack }) {
               </div>
               {editingKf === i ? (
                 <div style={{ marginTop: 8 }}>
-                  <textarea
+                  <input
                     value={editingKfText}
                     onChange={(e) => setEditingKfText(e.target.value)}
+                    placeholder="Describe what to change in this keyframe…"
                     style={{
-                      width: "100%", minHeight: 80, padding: 10, fontSize: "0.875rem",
+                      width: "100%", padding: "8px 12px", fontSize: "0.85rem",
                       borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)",
                       background: "var(--bg-primary)", color: "var(--text-primary)",
-                      fontFamily: "inherit", resize: "vertical",
+                      fontFamily: "inherit", boxSizing: "border-box",
                     }}
                   />
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                     <button
-                      onClick={() => {
-                        const updated = kf.map((item, idx) => idx === i ? { ...item, text: editingKfText } : item);
-                        setLocalKeyframes(updated);
-                        setEditingKf(-1);
-                      }}
+                      onClick={() => handleEditKeyframe(i, editingKfText)}
+                      disabled={kfEditLoading || !editingKfText.trim()}
                       style={{
                         padding: "4px 12px", borderRadius: "var(--radius-sm)", border: "none",
                         background: "var(--accent)", color: "#fff", cursor: "pointer",
                         fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4,
+                        opacity: (kfEditLoading || !editingKfText.trim()) ? 0.6 : 1,
                       }}
                     >
-                      <CheckIcon /> Save
+                      {kfEditLoading ? <SpinnerIcon size={12} /> : <SendIcon />}
+                      {kfEditLoading ? "Editing…" : "Send"}
                     </button>
                     <button
                       onClick={() => setEditingKf(-1)}
+                      disabled={kfEditLoading}
                       style={{
                         padding: "4px 12px", borderRadius: "var(--radius-sm)",
                         border: "1px solid var(--border-color)", background: "var(--bg-primary)",

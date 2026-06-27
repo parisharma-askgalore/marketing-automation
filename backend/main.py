@@ -165,6 +165,12 @@ class EditSectionRequest(BaseModel):
     selectedHook: Optional[str] = None
     projectId: str
 
+class EditKeyframeRequest(BaseModel):
+    projectId: str
+    index: int
+    currentText: str
+    editInstruction: str
+
 class OptimizePromptRequest(BaseModel):
     userDirection: str
     globalPrompt: str
@@ -729,6 +735,34 @@ Modify ONLY according to the user request.
     
     return {
         "updatedContent": updated_content
+    }
+
+
+@app.post("/api/edit-keyframe")
+async def edit_keyframe(req: EditKeyframeRequest):
+    prompt = f"""Current keyframe description:
+{req.currentText}
+
+User Modification Request:
+{req.editInstruction}
+
+Modify ONLY this single keyframe description according to the user request.
+Keep the same style and format. Return ONLY the updated keyframe text, nothing else.
+Do not include markdown, bullet points, or numbering."""
+    
+    updated_text = _call_gemini(prompt, as_json=False)
+    updated_text = updated_text.strip()
+    
+    # Update just this keyframe in the database
+    project = get_project_from_db(req.projectId)
+    if project:
+        kfs = project.get("keyframes") or []
+        if 0 <= req.index < len(kfs):
+            kfs[req.index]["text"] = updated_text
+            update_project_in_db(req.projectId, keyframes=kfs)
+    
+    return {
+        "updatedText": updated_text
     }
 
 
