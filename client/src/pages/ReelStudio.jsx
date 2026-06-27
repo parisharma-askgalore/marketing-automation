@@ -518,7 +518,7 @@ function CurrentProject({ onOpenSettings }) {
   const [selHook, setSelHook] = useState(null);
   const [script, setScript] = useState("");
   const [keyframes, setKeyframes] = useState([]);
-  const [storyboard, setStoryboard] = useState("");
+  const [storyboard, setStoryboard] = useState([]);
   const [marketingHooks, setMarketingHooks] = useState([]);
   const [vHook, setVHook] = useState("");
   const [vSpeak, setVSpeak] = useState("");
@@ -709,7 +709,7 @@ function CurrentProject({ onOpenSettings }) {
         hooks: marketingHooks.join("\n"),
         script: script,
         keyframes: keyframes.map(k => k.text).join("\n\n"),
-        storyboard: storyboard,
+        storyboard: Array.isArray(storyboard) ? storyboard.join("\n\n") : storyboard,
         videoHook: vHook,
         videoSpeak: vSpeak,
       };
@@ -726,7 +726,10 @@ function CurrentProject({ onOpenSettings }) {
       if (!response.ok) throw new Error("Failed to edit section");
       const data = await response.json();
       if (key === "script") setScript(data.updatedContent);
-      else if (key === "storyboard") setStoryboard(data.updatedContent);
+      else if (key === "storyboard") {
+        const scenes = data.updatedContent.split("\n\n").filter(Boolean);
+        setStoryboard(scenes.length > 1 ? scenes : [data.updatedContent]);
+      }
       else if (key === "videoHook") setVHook(data.updatedContent);
       else if (key === "videoSpeak") setVSpeak(data.updatedContent);
       else if (key === "keyframes") setKeyframes(data.updatedContent.split("• ").filter(Boolean).map(text => ({ text: text.trim(), image: null, isGenerating: false })));
@@ -963,7 +966,17 @@ function CurrentProject({ onOpenSettings }) {
             {visibleSteps.includes("storyboard") && (
               <div id="section-storyboard">
                 <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={(text) => handleEdit("storyboard", text)}>
-                  <ContentBg>{storyboard}</ContentBg>
+                  {(storyboard || []).map((scene, i) => (
+                    <div key={i} style={{
+                      background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+                      padding: 14, border: "1px solid var(--border-color)", marginBottom: 8,
+                    }}>
+                      <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+                        Scene {i + 1}
+                      </span>
+                      <div style={{ fontSize: "0.875rem", lineHeight: 1.6, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{scene}</div>
+                    </div>
+                  ))}
                   <RowFlex>
                     <PrimaryBtn onClick={() => handleNext("storyboard")} disabled={stepLoading === "storyboard"}>
                       {stepLoading === "storyboard" ? <><SpinnerIcon /> Loading…</> : <>Next <ChevronRightIcon /></>}
@@ -1276,7 +1289,17 @@ function PastProjectDetail({ project, onBack }) {
       </FieldBox>
 
       <FieldBox label="Storyboard Prompt" loading={editLoading["storyboard"]} onEdit={() => handleEdit("storyboard")}>
-        <ContentBg>{project.storyboard}</ContentBg>
+        {(Array.isArray(project.storyboard) ? project.storyboard : [project.storyboard].filter(Boolean)).map((scene, i) => (
+          <div key={i} style={{
+            background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+            padding: 14, border: "1px solid var(--border-color)", marginBottom: 8,
+          }}>
+            <span style={{ fontSize: "0.7rem", fontWeight: 700, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+              Scene {i + 1}
+            </span>
+            <div style={{ fontSize: "0.875rem", lineHeight: 1.6, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{scene}</div>
+          </div>
+        ))}
       </FieldBox>
 
       <FieldBox label="Keyframe Prompts" loading={editLoading["keyframes"]} onEdit={() => handleEdit("keyframes")}>

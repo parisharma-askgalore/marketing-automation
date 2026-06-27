@@ -11,7 +11,7 @@ import subprocess
 import shutil
 import base64
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import httpx
 from google import genai
 from google.genai import types
@@ -137,7 +137,7 @@ class GenerateStoryboardRequest(BaseModel):
 
 class GenerateVideoHookRequest(BaseModel):
     projectId: str
-    storyboard: str
+    storyboard: List[str] = Field(default_factory=list)
     keyframes: List[KeyframeItem]
     script: str
     selectedHook: str
@@ -148,7 +148,7 @@ class GenerateVideoHookRequest(BaseModel):
 class GenerateVideoSpeakRequest(BaseModel):
     projectId: str
     script: str
-    storyboard: str
+    storyboard: List[str] = Field(default_factory=list)
     keyframes: List[KeyframeItem]
     videoHookPrompt: str
     selectedHook: str
@@ -596,18 +596,17 @@ Generate ONLY 4–6 storyboard scenes maximum.
 
 Return output matching this JSON schema exactly:
 {{
-  "storyboard": "string"
+  "storyboard": ["string"]
 }}
 
-The storyboard field must contain one continuous cinematic text block.
-Do not return arrays.
-Do not return scene objects.
-Do not return nested JSON.
+Each element in the storyboard array is one complete scene description.
 Do not stringify JSON.
 Do not wrap in markdown.
 """
     response_json = generate_json(prompt)
-    storyboard = response_json.get("storyboard", "")
+    storyboard = response_json.get("storyboard", [])
+    if isinstance(storyboard, str):
+        storyboard = [storyboard]
     
     # Update PostgreSQL
     update_project_in_db(req.projectId, storyboard=storyboard)
@@ -651,7 +650,7 @@ Selected Hook:
 {req.selectedHook}
 
 Storyboard:
-{req.storyboard}
+{chr(10).join(req.storyboard) if req.storyboard else "N/A"}
 
 Keyframes:
 {keyframes_str}
@@ -770,6 +769,15 @@ Modify ONLY according to the user request.
         # Split by bullet and rebuild keyframe objects
         parts = updated_content.split("• ")
         updated_value = [{"text": p.strip(), "image": None} for p in parts if p.strip()]
+    elif col_name == "storyboard":
+        # Split by double newline or numbered scene markers
+        scenes = re.split(r'\n\s*\n', updated_content.strip())
+        scenes = [s.strip() for s in scenes if s.strip()]
+        # If only one block, try splitting by "Scene \d+:" or "**Scene"
+        if len(scenes) <= 1:
+            scenes = re.split(r'(?:Scene\s*\d+[\s:.]*|Scene\s*\d+\s*–\s*)', updated_content.strip(), flags=re.IGNORECASE)
+            scenes = [s.strip() for s in scenes if s.strip()]
+        updated_value = scenes if scenes else [updated_content.strip()]
     else:
         updated_value = updated_content
     
@@ -1159,7 +1167,7 @@ def init_db():
                     selected_hook TEXT DEFAULT '',
                     script TEXT DEFAULT '',
                     keyframes JSONB DEFAULT '[]'::jsonb,
-                    storyboard TEXT DEFAULT '',
+                    storyboard JSONB DEFAULT '[]'::jsonb,
                     video_hook TEXT DEFAULT '',
                     video_speak TEXT DEFAULT '',
                     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1176,6 +1184,27 @@ def init_db():
                 );
             """)
         conn.commit()
+        # Migrate storyboard from TEXT to JSONB if needed
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT data_type FROM information_schema.columns
+                    WHERE table_name='projects' AND column_name='storyboard'
+                """)
+                row = cur.fetchone()
+                if row and row[0] == 'text':
+                    cur.execute("""
+                        ALTER TABLE projects
+                        ALTER COLUMN storyboard TYPE JSONB
+                        USING CASE
+                            WHEN storyboard = '' THEN '[]'::jsonb
+                            ELSE to_jsonb(ARRAY[storyboard])
+                        END
+                    """)
+                    conn.commit()
+                    logger.info("Migrated storyboard column from TEXT to JSONB.")
+        except Exception as e:
+            logger.warning(f"storyboard migration skipped (maybe already done): {e}")
         conn.close()
         logger.info("PostgreSQL tables ready (media_feedback + projects + llm_config).")
     except Exception as e:
@@ -1351,11 +1380,11 @@ def _row_to_project(cur, row) -> dict:
     col_names = [desc[0] for desc in cur.description]
     p = dict(zip(col_names, row))
     # Ensure JSONB fields are parsed
-    for field in ("marketing_hooks", "keyframes"):
+    for field in ("marketing_hooks", "keyframes", "storyboard"):
         if isinstance(p.get(field), str):
             p[field] = json.loads(p[field])
         elif p.get(field) is None:
-            p[field] = [] if field == "marketing_hooks" else []
+            p[field] = []
     # Frontend-compatible field names
     created = p.get("created_at")
     return {
@@ -1368,7 +1397,7 @@ def _row_to_project(cur, row) -> dict:
         "script": p.get("script", ""),
         "marketingHooks": p.get("marketing_hooks") or [],
         "keyframes": p.get("keyframes") or [],
-        "storyboard": p.get("storyboard", ""),
+        "storyboard": p.get("storyboard") or [],
         "videoHook": p.get("video_hook", ""),
         "videoSpeak": p.get("video_speak", ""),
         "date": created.isoformat() if created else "",
