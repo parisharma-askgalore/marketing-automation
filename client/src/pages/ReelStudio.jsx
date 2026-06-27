@@ -1615,15 +1615,20 @@ function MasterPromptsModal({ onClose }) {
 
   const handleSave = async () => {
     setSaving(true);
+    setError(null);
     try {
-      await fetch(`${API_BASE}/api/prompts`, {
+      const res = await fetch(`${API_BASE}/api/prompts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(prompts),
       });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Save failed");
+      }
       onClose();
     } catch (err) {
-      console.error(err);
+      setError(err.message);
     } finally {
       setSaving(false);
     }

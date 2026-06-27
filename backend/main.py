@@ -3,7 +3,7 @@ import re
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 import psycopg
 import math
 import uuid
@@ -381,12 +381,16 @@ def get_prompts_api():
     return get_prompts()
 
 @app.post("/api/prompts")
-def update_prompts_api(req: Dict[str, str]):
-    current = get_prompts()
-    current.update(req)
-    with open(PROMPTS_FILE, "w") as f:
-        json.dump(current, f, indent=2)
-    return {"status": "success"}
+def update_prompts_api(req: Dict[str, str] = Body(...)):
+    try:
+        current = get_prompts()
+        current.update(req)
+        with open(PROMPTS_FILE, "w") as f:
+            json.dump(current, f, indent=2)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to save prompts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save prompts: {str(e)}")
 
 
 @app.post("/api/generate-hooks")
