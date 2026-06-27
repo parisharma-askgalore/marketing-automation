@@ -849,6 +849,32 @@ async def llm_config_get():
     return {"endpoint": "", "model": ""}
 
 
+class OptimizeMdPromptRequest(BaseModel):
+    field: str
+    markdown: str
+
+
+@app.post("/api/optimize-md-prompt")
+async def optimize_md_prompt(req: OptimizeMdPromptRequest):
+    """Use the current LLM to turn raw markdown into an optimized master prompt."""
+    prompt = f"""You are an expert prompt engineer. Given raw markdown content about how to generate {req.field} for a video ad, produce a concise, well-structured master prompt that will be prepended to user-facing generation requests.
+
+Rules:
+- Extract the core instructions, style guidance, and constraints from the markdown
+- Remove any markdown formatting, headers, or non-essential commentary
+- Keep the output as a single cohesive paragraph or short list of bullet instructions
+- Preserve all technical requirements and quality standards
+- Do NOT include meta commentary like "Here is your optimized prompt"
+
+Raw markdown content:
+{req.markdown}
+
+Return ONLY the optimized prompt text, no markdown wrapping, no explanation."""
+    
+    result = _call_gemini(prompt, as_json=False)
+    return {"prompt": result.strip()}
+
+
 class GenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: Optional[str] = "1:1"

@@ -1684,14 +1684,23 @@ function MasterPromptsModal({ onClose }) {
                       type="file"
                       accept=".md,.txt"
                       style={{ display: "none" }}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                          setPrompts((prev) => ({ ...prev, [key]: ev.target?.result || "" }));
-                        };
-                        reader.readAsText(file);
+                        const text = await file.text();
+                        try {
+                          setPrompts((prev) => ({ ...prev, [key]: "Optimizing…" }));
+                          const res = await fetch(`${API_BASE}/api/optimize-md-prompt`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ field: FIELD_LABELS[key] || key, markdown: text }),
+                          });
+                          if (!res.ok) throw new Error("Optimization failed");
+                          const data = await res.json();
+                          setPrompts((prev) => ({ ...prev, [key]: data.prompt }));
+                        } catch {
+                          setPrompts((prev) => ({ ...prev, [key]: text }));
+                        }
                         e.target.value = "";
                       }}
                     />
