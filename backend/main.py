@@ -248,6 +248,11 @@ def _get_model_list() -> list:
 
 def _call_gemini(prompt: str, as_json: bool = True):
     """Try each model in fallback order; raise on all failing."""
+    # Check for custom LLM config first
+    custom = get_llm_config()
+    if custom and custom.get("endpoint") and custom.get("api_key") and custom.get("model"):
+        return _call_custom_llm(prompt, custom, as_json)
+
     if not gemini_client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
 
@@ -275,6 +280,39 @@ def _call_gemini(prompt: str, as_json: bool = True):
             raise HTTPException(status_code=500, detail=f"AI generation failed: {err_str}")
 
     raise HTTPException(status_code=503, detail=f"All Gemini models are currently overloaded. Please retry shortly. Last error: {str(last_err)[:200]}")
+
+
+def _call_custom_llm(prompt: str, config: dict, as_json: bool = True):
+    """Call an OpenAI-compatible endpoint with the given config."""
+    import httpx
+    endpoint = config["endpoint"].rstrip("/")
+    api_key = config["api_key"]
+    model = config["model"]
+
+    url = f"{endpoint}/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if as_json:
+        body["response_format"] = {"type": "json_object"}
+
+    try:
+        response = httpx.post(url, json=body, headers=headers, timeout=120.0)
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        if as_json:
+            return json.loads(content)
+        return content.strip()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"LLM endpoint error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM call failed: {str(e)}")
 
 
 # Helper: Gemini JSON Generation
@@ -766,6 +804,51 @@ Do not include markdown, bullet points, or numbering."""
     }
 
 
+class LlmTestRequest(BaseModel):
+    endpoint: str
+    apiKey: str
+
+
+class LlmConfigRequest(BaseModel):
+    endpoint: str
+    apiKey: str
+    model: str
+
+
+@app.post("/api/llm-test")
+async def llm_test(req: LlmTestRequest):
+    """Test an OpenAI-compatible endpoint and list available models."""
+    import httpx
+    endpoint = req.endpoint.rstrip("/")
+    url = f"{endpoint}/v1/models"
+    try:
+        response = httpx.get(url, headers={"Authorization": f"Bearer {req.apiKey}"}, timeout=30.0)
+        response.raise_for_status()
+        data = response.json()
+        models = [m["id"] for m in data.get("data", [])]
+        return {"status": "ok", "models": models}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Endpoint error: {e.response.text[:200]}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Connection failed: {str(e)[:200]}")
+
+
+@app.post("/api/llm-config")
+async def llm_config_save(req: LlmConfigRequest):
+    """Save the LLM configuration."""
+    save_llm_config(req.endpoint, req.apiKey, req.model)
+    return {"status": "ok"}
+
+
+@app.get("/api/llm-config")
+async def llm_config_get():
+    """Return the current LLM configuration."""
+    cfg = get_llm_config()
+    if cfg:
+        return {"endpoint": cfg["endpoint"], "model": cfg["model"]}
+    return {"endpoint": "", "model": ""}
+
+
 class GenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: Optional[str] = "1:1"
@@ -1053,9 +1136,18 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS llm_config (
+                    id TEXT PRIMARY KEY,
+                    endpoint TEXT DEFAULT '',
+                    api_key TEXT DEFAULT '',
+                    model TEXT DEFAULT '',
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+            """)
         conn.commit()
         conn.close()
-        logger.info("PostgreSQL tables ready (media_feedback + projects).")
+        logger.info("PostgreSQL tables ready (media_feedback + projects + llm_config).")
     except Exception as e:
         logger.error(f"DB init failed: {e}")
 
@@ -1284,6 +1376,43 @@ def delete_project_from_db(project_id: str):
     except Exception as e:
         logger.error(f"Failed to delete project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+def get_llm_config() -> Optional[dict]:
+    """Return the saved LLM config, or None."""
+    if not DATABASE_URL:
+        return None
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT endpoint, api_key, model FROM llm_config WHERE id = 'default'")
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"endpoint": row[0], "api_key": row[1], "model": row[2]}
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def save_llm_config(endpoint: str, api_key: str, model: str):
+    """Upsert the LLM config."""
+    if not DATABASE_URL:
+        return
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO llm_config (id, endpoint, api_key, model, updated_at)
+                VALUES ('default', %s, %s, %s, NOW())
+                ON CONFLICT (id) DO UPDATE SET endpoint = %s, api_key = %s, model = %s, updated_at = NOW()
+            """, (endpoint, api_key, model, endpoint, api_key, model))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to save LLM config: {e}")
     finally:
         conn.close()
 

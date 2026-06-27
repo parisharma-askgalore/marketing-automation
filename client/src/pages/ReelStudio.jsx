@@ -113,6 +113,11 @@ const UploadIcon = () => (
     <line x1="12" y1="3" x2="12" y2="15" />
   </svg>
 );
+const ModelIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 4h16v16H4z" /><path d="M9 9h6v6H9z" /><path d="M4 20v-4" /><path d="M20 20v-4" /><path d="M4 8V4" /><path d="M20 8V4" />
+  </svg>
+);
 
 // ── Shared Buttons ─────────────────────────────────────────────────────────────
 function PrimaryBtn({ children, onClick, disabled }) {
@@ -525,6 +530,7 @@ function CurrentProject({ onOpenSettings }) {
   const [editingKf, setEditingKf] = useState(-1);
   const [editingKfText, setEditingKfText] = useState("");
   const [kfEditLoading, setKfEditLoading] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const fileRef = useRef(null);
   const bottomRef = useRef(null);
   const scrollRef = useRef(null);
@@ -792,11 +798,16 @@ function CurrentProject({ onOpenSettings }) {
         </div>
 
         <main style={{ maxWidth: 860, width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 20 }}>
+            <OutlineBtn onClick={() => setModelOpen(true)}>
+              <ModelIcon /> Change Model
+            </OutlineBtn>
             <OutlineBtn onClick={onOpenSettings}>
               <EditIcon /> Master Prompts
             </OutlineBtn>
           </div>
+
+          {modelOpen && <ChangeModelModal onClose={() => setModelOpen(false)} />}
 
             {/* INPUT */}
             <div id="section-input">
@@ -1698,6 +1709,151 @@ function MasterPromptsModal({ onClose }) {
         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-secondary)" }}>
           <OutlineBtn onClick={onClose} disabled={saving}>Cancel</OutlineBtn>
           <PrimaryBtn onClick={handleSave} disabled={saving || !!error}>{saving ? "Saving..." : "Save Defaults"}</PrimaryBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangeModelModal({ onClose }) {
+  const [endpoint, setEndpoint] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [models, setModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [tested, setTested] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/llm-config`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.endpoint) {
+          setEndpoint(data.endpoint);
+          setSelectedModel(data.model);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleTest = async () => {
+    if (!endpoint.trim() || !apiKey.trim()) return;
+    setTesting(true);
+    setError(null);
+    setTested(false);
+    try {
+      const res = await fetch(`${API_BASE}/api/llm-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: endpoint.trim(), apiKey: apiKey.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Test failed");
+      }
+      const data = await res.json();
+      setModels(data.models || []);
+      if (data.models?.length > 0 && !data.models.includes(selectedModel)) {
+        setSelectedModel(data.models[0]);
+      }
+      setTested(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedModel) return;
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE}/api/llm-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: endpoint.trim(), apiKey: apiKey.trim(), model: selectedModel }),
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }} onClick={onClose} />
+      <div style={{
+        position: "relative", width: "90%", maxWidth: 480, maxHeight: "85vh",
+        background: "var(--bg-primary)", borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column",
+        border: "1px solid var(--border-color)", overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-secondary)" }}>
+          <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--text-primary)" }}>Change LLM Model</h3>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><CloseIcon /></button>
+        </div>
+        <div style={{ padding: 20, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+          {error && (
+            <div style={{ color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", padding: "10px 14px", borderRadius: "var(--radius-md)", fontSize: "0.85rem" }}>
+              {error}
+            </div>
+          )}
+          <div>
+            <label style={labelStyle}>API Endpoint</label>
+            <input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="https://api.openai.com"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>API Key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={handleTest}
+            disabled={testing || !endpoint.trim() || !apiKey.trim()}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              padding: "10px 20px", borderRadius: "var(--radius-md)", border: "none",
+              background: testing ? "var(--bg-tertiary)" : "var(--accent)",
+              color: testing ? "var(--text-muted)" : "#fff",
+              fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            {testing ? <><SpinnerIcon size={14} /> Testing…</> : <>Test &amp; List Models</>}
+          </button>
+          {tested && models.length > 0 && (
+            <div>
+              <label style={labelStyle}>Model</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{ ...inputStyle, cursor: "pointer" }}
+              >
+                {models.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {tested && models.length === 0 && (
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>No models found at this endpoint.</p>
+          )}
+        </div>
+        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: 12, background: "var(--bg-secondary)" }}>
+          <OutlineBtn onClick={onClose} disabled={saving}>Cancel</OutlineBtn>
+          <PrimaryBtn onClick={handleSave} disabled={saving || !selectedModel}>{saving ? "Saving..." : "Save"}</PrimaryBtn>
         </div>
       </div>
     </div>
