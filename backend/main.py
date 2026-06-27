@@ -285,11 +285,11 @@ def _call_gemini(prompt: str, as_json: bool = True):
 def _call_custom_llm(prompt: str, config: dict, as_json: bool = True):
     """Call an OpenAI-compatible endpoint with the given config."""
     import httpx
-    endpoint = config["endpoint"].rstrip("/")
+    base = config["endpoint"].rstrip("/")
     api_key = config["api_key"]
     model = config["model"]
 
-    url = f"{endpoint}/v1/chat/completions"
+    url = f"{base}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -819,8 +819,8 @@ class LlmConfigRequest(BaseModel):
 async def llm_test(req: LlmTestRequest):
     """Test an OpenAI-compatible endpoint and list available models."""
     import httpx
-    endpoint = req.endpoint.rstrip("/")
-    url = f"{endpoint}/v1/models"
+    base = req.endpoint.rstrip("/")
+    url = f"{base}/models"
     try:
         response = httpx.get(url, headers={"Authorization": f"Bearer {req.apiKey}"}, timeout=30.0)
         response.raise_for_status()
